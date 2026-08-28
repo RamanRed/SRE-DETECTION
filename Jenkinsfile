@@ -206,18 +206,20 @@ pipeline {
                         chmod 644 ${WORKSPACE}/kubeconfig.tmp
 
                         # Deploy via containerized kubectl to AWS EC2 K3s cluster
+                        # --validate=false skips openapi schema download which fails due to
+                        # x509 cert mismatch (K3s cert only has private IPs, not public IP)
                         docker run --rm \
                           --volumes-from jenkins \
                           -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
                           bitnami/kubectl:latest \
-                          apply -f ${WORKSPACE}/k8s/
+                          apply --validate=false -f ${WORKSPACE}/k8s/
 
                         echo '=== Deployment to AWS K3s Cluster Successful ==='
                         docker run --rm \
                           --volumes-from jenkins \
                           -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
                           bitnami/kubectl:latest \
-                          get pods -n sre-copilot || true
+                          get pods -n sre-copilot --insecure-skip-tls-verify=true || true
 
                         # Clean up temp kubeconfig from workspace
                         rm -f ${WORKSPACE}/kubeconfig.tmp
