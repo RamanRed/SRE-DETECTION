@@ -43,3 +43,6 @@ terraform.rc
 .env.local
 *.pem
 *.key
+*.tfvars
+*.tfvars.json
+*kubeconfig*

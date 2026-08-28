@@ -192,7 +192,7 @@ resource "aws_security_group" "rds_sg" {
 # ──────────────────────────────────────────────────────────────────────────────
 
 resource "aws_key_pair" "sre_key" {
-  key_name   = "${var.project_name}-key"
+  key_name   = "${var.project_name}-deploy-key"
   public_key = var.ec2_public_key
   tags       = var.common_tags
 }
@@ -246,10 +246,14 @@ resource "aws_db_subnet_group" "rds_subnets" {
   tags       = merge(var.common_tags, { Name = "${var.project_name}-rds-subnets" })
 }
 
+data "aws_rds_engine_version" "postgres" {
+  engine = "postgres"
+}
+
 resource "aws_db_instance" "postgres" {
   identifier              = "${var.project_name}-postgres"
   engine                  = "postgres"
-  engine_version          = "16.3"
+  engine_version          = data.aws_rds_engine_version.postgres.version
   instance_class          = var.rds_instance_class  # db.t3.micro (Free Tier)
   allocated_storage       = 20
   max_allocated_storage   = 25
