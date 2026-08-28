@@ -1,0 +1,34 @@
+---
+# Kubernetes Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sre-copilot
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    project: sre-copilot
+---
+# ConfigMap: shared non-secret configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-copilot-config
+  namespace: sre-copilot
+data:
+  DB_NAME:          "sredb"
+  DB_PORT:          "5432"
+  AI_COPILOT_HOST:  "ai-copilot-service"
+  AI_COPILOT_PORT:  "9090"
+  SPRING_PROFILES_ACTIVE: "kubernetes"
+---
+# Secret: database credentials (base64 encoded in production use kubectl create secret)
+# kubectl create secret generic sre-db-secret --from-literal=DB_USERNAME=sreuser --from-literal=DB_PASSWORD=srepassword -n sre-copilot
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sre-db-secret
+  namespace: sre-copilot
+type: Opaque
+stringData:
+  DB_USERNAME: "sreuser"
+  DB_PASSWORD: "srepassword"

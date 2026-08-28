@@ -1,0 +1,87 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-copilot-service
+  namespace: sre-copilot
+  labels:
+    app: ai-copilot-service
+    component: backend
+    tier: ai-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-copilot-service
+  template:
+    metadata:
+      labels:
+        app: ai-copilot-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8082"
+        prometheus.io/path:   "/actuator/prometheus"
+    spec:
+      containers:
+        - name: ai-copilot-service
+          image: docker.io/your-dockerhub/sre-copilot-ai-copilot:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9090
+              name: grpc
+              protocol: TCP
+            - containerPort: 8082
+              name: management
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: sre-copilot-config
+                  key: SPRING_PROFILES_ACTIVE
+            - name: SPRING_AI_OLLAMA_BASE_URL
+              value: "http://ollama-service:11434"
+            - name: SPRING_AI_OLLAMA_MODEL
+              value: "qwen2.5-coder:1.5b"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-copilot-service
+  namespace: sre-copilot
+  labels:
+    app: ai-copilot-service
+spec:
+  selector:
+    app: ai-copilot-service
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+    - name: management
+      port: 8082
+      targetPort: 8082
+      protocol: TCP
+  type: ClusterIP

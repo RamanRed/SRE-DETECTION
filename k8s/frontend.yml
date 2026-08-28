@@ -1,0 +1,83 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-frontend
+  namespace: sre-copilot
+  labels:
+    app: sre-frontend
+    component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sre-frontend
+  template:
+    metadata:
+      labels:
+        app: sre-frontend
+    spec:
+      containers:
+        - name: sre-frontend
+          image: docker.io/your-dockerhub/sre-copilot-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu:    "50m"
+            limits:
+              memory: "128Mi"
+              cpu:    "100m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-frontend
+  namespace: sre-copilot
+  labels:
+    app: sre-frontend
+spec:
+  selector:
+    app: sre-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+# Ingress: K3s Traefik / Nginx Ingress Controller
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sre-copilot-ingress
+  namespace: sre-copilot
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    # For Nginx: kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: incident-service
+                port:
+                  number: 8081
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sre-frontend
+                port:
+                  number: 80
