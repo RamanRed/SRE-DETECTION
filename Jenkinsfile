@@ -85,7 +85,7 @@ pipeline {
                         usernameVariable: 'SONAR_USER',
                         passwordVariable: 'SONAR_TOKEN_VAL')]) {
                     sh """
-                        # Scan incident-service using sonar-scanner-cli
+                        # Scan incident-service
                         docker run --rm \\
                           --volumes-from jenkins \\
                           -w ${WORKSPACE}/apps/incident-service \\
@@ -97,9 +97,10 @@ pipeline {
                             -Dsonar.host.url=https://sonarcloud.io \\
                             -Dsonar.token=${SONAR_TOKEN_VAL} \\
                             -Dsonar.sources=src/main/java \\
+                            -Dsonar.tests= \\
                             -Dsonar.java.binaries=target/classes
 
-                        # Scan ai-copilot-service using sonar-scanner-cli
+                        # Scan ai-copilot-service
                         docker run --rm \\
                           --volumes-from jenkins \\
                           -w ${WORKSPACE}/apps/ai-copilot-service \\
@@ -111,6 +112,7 @@ pipeline {
                             -Dsonar.host.url=https://sonarcloud.io \\
                             -Dsonar.token=${SONAR_TOKEN_VAL} \\
                             -Dsonar.sources=src/main/java \\
+                            -Dsonar.tests= \\
                             -Dsonar.java.binaries=target/classes
                     """
                 }
