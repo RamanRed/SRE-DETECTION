@@ -1,0 +1,47 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ai-copilot-service
+  ai:
+    openai:
+      api-key: ${SPRING_AI_OPENAI_API_KEY:demo-key}
+      chat:
+        options:
+          model: ${SPRING_AI_OPENAI_MODEL:gpt-4o-mini}
+          temperature: 0.2
+    ollama:
+      base-url: ${SPRING_AI_OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        options:
+          model: ${SPRING_AI_OLLAMA_MODEL:qwen2.5-coder:1.5b}
+          temperature: 0.2
+
+grpc:
+  server:
+    port: 9090
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    prometheus:
+      enabled: true
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        ai.triage.inference: true
+
+logging:
+  level:
+    root: INFO
+    com.devops.copilot: DEBUG
+    net.devh.boot.grpc: INFO
