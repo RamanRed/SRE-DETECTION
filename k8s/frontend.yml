@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: sre-frontend
-          image: docker.io/your-dockerhub/sre-copilot-frontend:latest
+          image: docker.io/ramanred/sre-copilot-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80

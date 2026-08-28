@@ -29,7 +29,7 @@ spec:
     spec:
       containers:
         - name: incident-service
-          image: docker.io/your-dockerhub/sre-copilot-incident-service:latest
+          image: docker.io/ramanred/sre-copilot-incident-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8081

@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: ai-copilot-service
-          image: docker.io/your-dockerhub/sre-copilot-ai-copilot:latest
+          image: docker.io/ramanred/sre-copilot-ai-copilot:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 9090

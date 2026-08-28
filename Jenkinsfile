@@ -3,12 +3,13 @@ pipeline {
 
     environment {
         DOCKER_REGISTRY    = 'docker.io'
-        DOCKER_USER        = credentials('dockerhub-username')
+        DOCKER_USER        = 'ramanred'
         DOCKER_PASS        = credentials('dockerhub-password')
         SONAR_TOKEN        = credentials('sonarqube-token')
-        SONAR_HOST_URL     = 'http://sonarqube:9000'
+        SONAR_HOST_URL     = 'https://sonarcloud.io'
+        SONAR_ORG          = 'ramanred'
         K3S_KUBECONFIG     = credentials('k3s-kubeconfig')
-        IMAGE_PREFIX       = "${DOCKER_USER}/sre-copilot"
+        IMAGE_PREFIX       = "docker.io/ramanred/sre-copilot"
         BUILD_TAG          = "${env.GIT_COMMIT?.take(7) ?: 'latest'}"
     }
 
@@ -76,12 +77,13 @@ pipeline {
         stage('SonarQube SAST') {
             when { branch 'main' }
             steps {
-                withSonarQubeEnv('SonarQube') {
+                withSonarQubeEnv('SonarCloud') {
                     dir('apps/incident-service') {
                         sh """
                             mvn sonar:sonar \
-                              -Dsonar.projectKey=incident-service \
-                              -Dsonar.projectName='Incident Service' \
+                              -Dsonar.projectKey=ramanred_sre-copilot-incident-service \
+                              -Dsonar.projectName='sre-copilot-incident-service' \
+                              -Dsonar.organization=${SONAR_ORG} \
                               -Dsonar.host.url=${SONAR_HOST_URL} \
                               -Dsonar.token=${SONAR_TOKEN} \
                               --no-transfer-progress
@@ -90,8 +92,9 @@ pipeline {
                     dir('apps/ai-copilot-service') {
                         sh """
                             mvn sonar:sonar \
-                              -Dsonar.projectKey=ai-copilot-service \
-                              -Dsonar.projectName='AI Copilot Service' \
+                              -Dsonar.projectKey=ramanred_sre-copilot-ai-copilot \
+                              -Dsonar.projectName='sre-copilot-ai-copilot' \
+                              -Dsonar.organization=${SONAR_ORG} \
                               -Dsonar.host.url=${SONAR_HOST_URL} \
                               -Dsonar.token=${SONAR_TOKEN} \
                               --no-transfer-progress
@@ -116,6 +119,7 @@ pipeline {
                         -f apps/ai-copilot-service/Dockerfile .
                     docker build -t ${IMAGE_PREFIX}-frontend:${BUILD_TAG} \
                         -f apps/frontend/Dockerfile .
+                    echo 'Docker images built successfully for ramanred'
                 """
             }
         }
@@ -148,22 +152,25 @@ pipeline {
         stage('Push Images') {
             when { branch 'main' }
             steps {
-                sh """
-                    echo "${DOCKER_PASS}" | docker login ${DOCKER_REGISTRY} -u "${DOCKER_USER}" --password-stdin
+                withCredentials([string(credentialsId: 'dockerhub-password', variable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo "${DOCKER_PASS}" | docker login ${DOCKER_REGISTRY} -u ramanred --password-stdin
 
-                    docker push ${IMAGE_PREFIX}-incident-service:${BUILD_TAG}
-                    docker push ${IMAGE_PREFIX}-ai-copilot:${BUILD_TAG}
-                    docker push ${IMAGE_PREFIX}-frontend:${BUILD_TAG}
+                        docker push ${IMAGE_PREFIX}-incident-service:${BUILD_TAG}
+                        docker push ${IMAGE_PREFIX}-ai-copilot:${BUILD_TAG}
+                        docker push ${IMAGE_PREFIX}-frontend:${BUILD_TAG}
 
-                    # Tag as latest
-                    docker tag ${IMAGE_PREFIX}-incident-service:${BUILD_TAG} ${IMAGE_PREFIX}-incident-service:latest
-                    docker tag ${IMAGE_PREFIX}-ai-copilot:${BUILD_TAG}       ${IMAGE_PREFIX}-ai-copilot:latest
-                    docker tag ${IMAGE_PREFIX}-frontend:${BUILD_TAG}         ${IMAGE_PREFIX}-frontend:latest
+                        # Tag as latest
+                        docker tag ${IMAGE_PREFIX}-incident-service:${BUILD_TAG} ${IMAGE_PREFIX}-incident-service:latest
+                        docker tag ${IMAGE_PREFIX}-ai-copilot:${BUILD_TAG}       ${IMAGE_PREFIX}-ai-copilot:latest
+                        docker tag ${IMAGE_PREFIX}-frontend:${BUILD_TAG}         ${IMAGE_PREFIX}-frontend:latest
 
-                    docker push ${IMAGE_PREFIX}-incident-service:latest
-                    docker push ${IMAGE_PREFIX}-ai-copilot:latest
-                    docker push ${IMAGE_PREFIX}-frontend:latest
-                """
+                        docker push ${IMAGE_PREFIX}-incident-service:latest
+                        docker push ${IMAGE_PREFIX}-ai-copilot:latest
+                        docker push ${IMAGE_PREFIX}-frontend:latest
+                        echo 'Successfully pushed to docker.io/ramanred'
+                    """
+                }
             }
         }
 
