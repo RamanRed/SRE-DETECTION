@@ -199,19 +199,28 @@ pipeline {
                         sed -i 's|:latest|:${BUILD_TAG}|g' k8s/ai-copilot.yml || true
                         sed -i 's|:latest|:${BUILD_TAG}|g' k8s/frontend.yml || true
 
+                        # Jenkins extracts secret files to /tmp which is NOT mounted in the
+                        # kubectl container via --volumes-from. Copy it into the workspace
+                        # (under /var/jenkins_home) so the container can reach it.
+                        cp \${KUBECONFIG_FILE} ${WORKSPACE}/kubeconfig.tmp
+                        chmod 644 ${WORKSPACE}/kubeconfig.tmp
+
                         # Deploy via containerized kubectl to AWS EC2 K3s cluster
                         docker run --rm \
                           --volumes-from jenkins \
-                          -e KUBECONFIG=${KUBECONFIG_FILE} \
+                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
                           bitnami/kubectl:latest \
                           apply -f ${WORKSPACE}/k8s/
 
                         echo '=== Deployment to AWS K3s Cluster Successful ==='
                         docker run --rm \
                           --volumes-from jenkins \
-                          -e KUBECONFIG=${KUBECONFIG_FILE} \
+                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
                           bitnami/kubectl:latest \
                           get pods -n sre-copilot || true
+
+                        # Clean up temp kubeconfig from workspace
+                        rm -f ${WORKSPACE}/kubeconfig.tmp
                     """
                 }
             }
