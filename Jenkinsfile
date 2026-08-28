@@ -45,7 +45,7 @@ pipeline {
                               --volumes-from jenkins \
                               -w ${WORKSPACE}/apps/incident-service \
                               maven:3.9-eclipse-temurin-17 \
-                              mvn clean test -DskipTests=false --no-transfer-progress
+                              sh -c "mvn clean test -DskipTests=false --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
                         """
                     }
                     post {
@@ -62,7 +62,7 @@ pipeline {
                               --volumes-from jenkins \
                               -w ${WORKSPACE}/apps/ai-copilot-service \
                               maven:3.9-eclipse-temurin-17 \
-                              mvn clean test -DskipTests=false --no-transfer-progress
+                              sh -c "mvn clean test -DskipTests=false --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
                         """
                     }
                     post {
@@ -85,25 +85,25 @@ pipeline {
                       --volumes-from jenkins \
                       -w ${WORKSPACE}/apps/incident-service \
                       maven:3.9-eclipse-temurin-17 \
-                      mvn sonar:sonar \
+                      sh -c "mvn sonar:sonar \
                         -Dsonar.projectKey=ramanred_sre-copilot-incident-service \
                         -Dsonar.projectName='sre-copilot-incident-service' \
                         -Dsonar.organization=${SONAR_ORG} \
                         -Dsonar.host.url=${SONAR_HOST_URL} \
                         -Dsonar.token=${SONAR_TOKEN} \
-                        --no-transfer-progress
+                        --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
 
                     docker run --rm \
                       --volumes-from jenkins \
                       -w ${WORKSPACE}/apps/ai-copilot-service \
                       maven:3.9-eclipse-temurin-17 \
-                      mvn sonar:sonar \
+                      sh -c "mvn sonar:sonar \
                         -Dsonar.projectKey=ramanred_sre-copilot-ai-copilot \
                         -Dsonar.projectName='sre-copilot-ai-copilot' \
                         -Dsonar.organization=${SONAR_ORG} \
                         -Dsonar.host.url=${SONAR_HOST_URL} \
                         -Dsonar.token=${SONAR_TOKEN} \
-                        --no-transfer-progress
+                        --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
                 """
             }
         }
@@ -210,9 +210,6 @@ pipeline {
         }
         failure {
             echo "❌ Pipeline failed"
-        }
-        always {
-            sh 'chmod -R 777 . || true'
         }
     }
 }
