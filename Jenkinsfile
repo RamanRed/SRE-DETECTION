@@ -42,8 +42,8 @@ pipeline {
                     steps {
                         sh """
                             docker run --rm \
-                              -v ${WORKSPACE}:/workspace \
-                              -w /workspace/apps/incident-service \
+                              --volumes-from jenkins \
+                              -w ${WORKSPACE}/apps/incident-service \
                               maven:3.9-eclipse-temurin-17 \
                               mvn clean test -DskipTests=false --no-transfer-progress
                         """
@@ -59,8 +59,8 @@ pipeline {
                     steps {
                         sh """
                             docker run --rm \
-                              -v ${WORKSPACE}:/workspace \
-                              -w /workspace/apps/ai-copilot-service \
+                              --volumes-from jenkins \
+                              -w ${WORKSPACE}/apps/ai-copilot-service \
                               maven:3.9-eclipse-temurin-17 \
                               mvn clean test -DskipTests=false --no-transfer-progress
                         """
@@ -82,8 +82,8 @@ pipeline {
             steps {
                 sh """
                     docker run --rm \
-                      -v ${WORKSPACE}:/workspace \
-                      -w /workspace/apps/incident-service \
+                      --volumes-from jenkins \
+                      -w ${WORKSPACE}/apps/incident-service \
                       maven:3.9-eclipse-temurin-17 \
                       mvn sonar:sonar \
                         -Dsonar.projectKey=ramanred_sre-copilot-incident-service \
@@ -94,8 +94,8 @@ pipeline {
                         --no-transfer-progress
 
                     docker run --rm \
-                      -v ${WORKSPACE}:/workspace \
-                      -w /workspace/apps/ai-copilot-service \
+                      --volumes-from jenkins \
+                      -w ${WORKSPACE}/apps/ai-copilot-service \
                       maven:3.9-eclipse-temurin-17 \
                       mvn sonar:sonar \
                         -Dsonar.projectKey=ramanred_sre-copilot-ai-copilot \
@@ -187,14 +187,15 @@ pipeline {
 
                         # Deploy via containerized kubectl to AWS EC2 K3s cluster
                         docker run --rm \
-                          -v ${KUBECONFIG_FILE}:/root/.kube/config:ro \
-                          -v ${WORKSPACE}/k8s:/k8s \
+                          --volumes-from jenkins \
+                          -e KUBECONFIG=${KUBECONFIG_FILE} \
                           bitnami/kubectl:latest \
-                          apply -f /k8s/
+                          apply -f ${WORKSPACE}/k8s/
 
                         echo '=== Deployment to AWS K3s Cluster Successful ==='
                         docker run --rm \
-                          -v ${KUBECONFIG_FILE}:/root/.kube/config:ro \
+                          --volumes-from jenkins \
+                          -e KUBECONFIG=${KUBECONFIG_FILE} \
                           bitnami/kubectl:latest \
                           get pods -n sre-copilot || true
                     """
