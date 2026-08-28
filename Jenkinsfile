@@ -212,7 +212,7 @@ pipeline {
             echo "❌ Pipeline failed"
         }
         always {
-            cleanWs()
+            sh 'chmod -R 777 . || true'
         }
     }
 }
