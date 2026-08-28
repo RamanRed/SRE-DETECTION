@@ -1,0 +1,177 @@
+---
+################################################################################
+# Ansible Playbook: Bootstrap EC2 node with Docker Engine + K3s
+# Usage: ansible-playbook -i inventory.ini playbook.yml
+# Target: Ubuntu 22.04 t3.micro EC2 with 2GB swap (provisioned by Terraform)
+################################################################################
+
+- name: Bootstrap SRE Copilot Node
+  hosts: k3s_nodes
+  become: yes
+  gather_facts: yes
+  vars:
+    k3s_version: "v1.30.2+k3s1"
+    docker_compose_version: "2.28.1"
+
+  tasks:
+
+    # ── System prerequisites ─────────────────────────────────────────────────
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install system utilities
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - unzip
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - htop
+          - net-tools
+        state: present
+
+    # ── Swap space (critical for t3.micro with Spring Boot + K3s) ──────────
+    - name: Check if swap file exists
+      stat:
+        path: /swapfile
+      register: swapfile_stat
+
+    - name: Create 2GB swap file
+      command: fallocate -l 2G /swapfile
+      when: not swapfile_stat.stat.exists
+
+    - name: Set swap file permissions
+      file:
+        path: /swapfile
+        mode: '0600'
+      when: not swapfile_stat.stat.exists
+
+    - name: Format swap file
+      command: mkswap /swapfile
+      when: not swapfile_stat.stat.exists
+
+    - name: Enable swap
+      command: swapon /swapfile
+      when: not swapfile_stat.stat.exists
+
+    - name: Persist swap in fstab
+      lineinfile:
+        path: /etc/fstab
+        line: '/swapfile none swap sw 0 0'
+        state: present
+
+    # ── Docker Engine ────────────────────────────────────────────────────────
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker Engine
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Enable and start Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    # ── K3s Lightweight Kubernetes ───────────────────────────────────────────
+    - name: Check if K3s is already installed
+      stat:
+        path: /usr/local/bin/k3s
+      register: k3s_stat
+
+    - name: Install K3s single-node cluster
+      shell: >
+        curl -sfL https://get.k3s.io |
+        INSTALL_K3S_VERSION={{ k3s_version }}
+        INSTALL_K3S_EXEC="server --disable traefik --write-kubeconfig-mode=644"
+        sh -
+      when: not k3s_stat.stat.exists
+
+    - name: Wait for K3s to be ready
+      wait_for:
+        path: /var/lib/rancher/k3s/server/node-token
+        timeout: 120
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy K3s kubeconfig for ubuntu user
+      copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: /home/ubuntu/.kube/config
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+        remote_src: yes
+
+    - name: Set KUBECONFIG in ubuntu .bashrc
+      lineinfile:
+        path: /home/ubuntu/.bashrc
+        line: 'export KUBECONFIG=/home/ubuntu/.kube/config'
+        state: present
+
+    # ── Verify installations ─────────────────────────────────────────────────
+    - name: Verify K3s is running
+      command: kubectl get nodes
+      become_user: ubuntu
+      register: k3s_nodes
+      retries: 5
+      delay: 10
+
+    - name: Print K3s node status
+      debug:
+        var: k3s_nodes.stdout_lines
+
+    - name: Print Docker version
+      command: docker --version
+      register: docker_ver
+
+    - name: Print Docker version output
+      debug:
+        var: docker_ver.stdout
+
+    - name: Bootstrap summary
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════════
+          SRE Copilot Node Bootstrap Complete!
+          ═══════════════════════════════════════════════════════
+          ✓ Swap: 2GB configured
+          ✓ Docker Engine: Installed
+          ✓ K3s: {{ k3s_version }} running
+          ✓ kubectl: Configured for ubuntu user
+          ═══════════════════════════════════════════════════════
+          Next: Deploy K8s manifests with kubectl apply -f k8s/
+          ═══════════════════════════════════════════════════════
