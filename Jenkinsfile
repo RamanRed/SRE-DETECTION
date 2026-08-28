@@ -80,34 +80,37 @@ pipeline {
         // ──────────────────────────────────────────────────────────
         stage('SonarCloud SAST') {
             steps {
-                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                withCredentials([usernamePassword(
+                        credentialsId: 'sonarqube-token',
+                        usernameVariable: 'SONAR_USER',
+                        passwordVariable: 'SONAR_TOKEN_VAL')]) {
                     sh """
                         # Scan incident-service using sonar-scanner-cli
-                        docker run --rm \
-                          --volumes-from jenkins \
-                          -w ${WORKSPACE}/apps/incident-service \
-                          -e SONAR_TOKEN=${SONAR_TOKEN} \
-                          sonarsource/sonar-scanner-cli:latest \
-                          sonar-scanner \
-                            -Dsonar.projectKey=ramanred_sre-copilot-incident-service \
-                            -Dsonar.organization=ramanred \
-                            -Dsonar.host.url=https://sonarcloud.io \
-                            -Dsonar.token=${SONAR_TOKEN} \
-                            -Dsonar.sources=src/main/java \
+                        docker run --rm \\
+                          --volumes-from jenkins \\
+                          -w ${WORKSPACE}/apps/incident-service \\
+                          -e SONAR_TOKEN=${SONAR_TOKEN_VAL} \\
+                          sonarsource/sonar-scanner-cli:latest \\
+                          sonar-scanner \\
+                            -Dsonar.projectKey=ramanred_sre-copilot-incident-service \\
+                            -Dsonar.organization=ramanred \\
+                            -Dsonar.host.url=https://sonarcloud.io \\
+                            -Dsonar.token=${SONAR_TOKEN_VAL} \\
+                            -Dsonar.sources=src/main/java \\
                             -Dsonar.java.binaries=target/classes
 
                         # Scan ai-copilot-service using sonar-scanner-cli
-                        docker run --rm \
-                          --volumes-from jenkins \
-                          -w ${WORKSPACE}/apps/ai-copilot-service \
-                          -e SONAR_TOKEN=${SONAR_TOKEN} \
-                          sonarsource/sonar-scanner-cli:latest \
-                          sonar-scanner \
-                            -Dsonar.projectKey=ramanred_sre-copilot-ai-copilot \
-                            -Dsonar.organization=ramanred \
-                            -Dsonar.host.url=https://sonarcloud.io \
-                            -Dsonar.token=${SONAR_TOKEN} \
-                            -Dsonar.sources=src/main/java \
+                        docker run --rm \\
+                          --volumes-from jenkins \\
+                          -w ${WORKSPACE}/apps/ai-copilot-service \\
+                          -e SONAR_TOKEN=${SONAR_TOKEN_VAL} \\
+                          sonarsource/sonar-scanner-cli:latest \\
+                          sonar-scanner \\
+                            -Dsonar.projectKey=ramanred_sre-copilot-ai-copilot \\
+                            -Dsonar.organization=ramanred \\
+                            -Dsonar.host.url=https://sonarcloud.io \\
+                            -Dsonar.token=${SONAR_TOKEN_VAL} \\
+                            -Dsonar.sources=src/main/java \\
                             -Dsonar.java.binaries=target/classes
                     """
                 }
