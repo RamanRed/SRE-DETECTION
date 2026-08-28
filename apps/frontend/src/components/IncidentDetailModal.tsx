@@ -134,7 +134,7 @@ export default function IncidentDetailModal({ incident, onClose, onResolved }: P
           <Section title="Raw Logs">
             <div>
               <div className="terminal" style={{ maxHeight: logsExpanded ? 400 : 120 }}>
-                {incident.rawLogs.split('\n').map((line, i) => {
+                {incident.rawLogs.split('\n').map((line: string, i: number) => {
                   const cls = line.includes('ERROR') || line.includes('FATAL') ? 't-error'
                             : line.includes('WARN')  ? 't-warn'
                             : line.includes('INFO')  ? 't-info'
@@ -197,7 +197,7 @@ export default function IncidentDetailModal({ incident, onClose, onResolved }: P
                   <span style={{ fontSize: 11, color: '#10b981' }}>{confidencePercent}</span>
                 </div>
                 <div className="progress-bar">
-                  <div className="progress-bar-fill" style={{ width: confidencePercent, background: '#10b981' }} />
+                  <div className="progress-bar-fill" style={{ width: confidencePercent ?? undefined, background: '#10b981' }} />
                 </div>
               </div>
             </div>

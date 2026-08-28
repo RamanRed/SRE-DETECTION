@@ -13,6 +13,7 @@ export interface Incident {
   environment: string;
   status: IncidentStatus;
   severity?: IncidentSeverity;
+  rawLogs?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
