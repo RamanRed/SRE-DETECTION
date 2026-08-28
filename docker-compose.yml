@@ -1,0 +1,162 @@
+# ────────────────────────────────────────────────────────────────────────────
+# SRE Incident Copilot Platform — Docker Compose
+# Run with: docker compose up --build
+# Requires: Docker Engine 24+, Compose v2
+# ────────────────────────────────────────────────────────────────────────────
+
+version: '3.9'
+
+services:
+
+  # ──────────────────────────────────────────
+  # PostgreSQL Database
+  # ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: sre-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       sredb
+      POSTGRES_USER:     sreuser
+      POSTGRES_PASSWORD: srepassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sreuser -d sredb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - sre-net
+
+  # ──────────────────────────────────────────
+  # Local Ollama LLM (optional, zero-cost AI)
+  # Models: qwen2.5-coder:1.5b, llama3.2:1b
+  # ──────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sre-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    # Pull a lightweight model on first start
+    # (comment out if using OpenAI/Cloud LLM)
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5-coder:1.5b && wait"]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q qwen || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      - sre-net
+
+  # ──────────────────────────────────────────
+  # AI Copilot & Triage Engine
+  # gRPC port 9090 | HTTP actuator 8082
+  # ──────────────────────────────────────────
+  ai-copilot-service:
+    build:
+      context: .
+      dockerfile: apps/ai-copilot-service/Dockerfile
+    container_name: sre-ai-copilot
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE:    docker
+      # -- Use Ollama (zero-cost, local) --
+      SPRING_AI_OLLAMA_BASE_URL: http://ollama:11434
+      SPRING_AI_OLLAMA_MODEL:    qwen2.5-coder:1.5b
+      # -- Uncomment for OpenAI --
+      # SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # SPRING_AI_OPENAI_MODEL:   gpt-4o-mini
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health | grep -q UP || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - sre-net
+
+  # ──────────────────────────────────────────
+  # Incident & Audit Core Service
+  # REST API port 8081
+  # ──────────────────────────────────────────
+  incident-service:
+    build:
+      context: .
+      dockerfile: apps/incident-service/Dockerfile
+    container_name: sre-incident-service
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST:                postgres
+      DB_PORT:                5432
+      DB_NAME:                sredb
+      DB_USERNAME:            sreuser
+      DB_PASSWORD:            srepassword
+      AI_COPILOT_HOST:        ai-copilot-service
+      AI_COPILOT_PORT:        9090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-copilot-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/api/v1/incidents/health | grep -q UP || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    networks:
+      - sre-net
+
+  # ──────────────────────────────────────────
+  # SRE Copilot React Frontend (Nginx)
+  # ──────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: sre-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      incident-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - sre-net
+
+# ──────────────────────────────────────────────────────────────────────────
+# Networking & Volumes
+# ──────────────────────────────────────────────────────────────────────────
+networks:
+  sre-net:
+    driver: bridge
+    name: sre-copilot-network
+
+volumes:
+  postgres_data:
+    name: sre-postgres-data
+  ollama_models:
+    name: sre-ollama-models
