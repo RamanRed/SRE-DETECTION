@@ -162,9 +162,12 @@ pipeline {
         // ──────────────────────────────────────────────────────────
         stage('Push Images') {
             steps {
-                withCredentials([string(credentialsId: 'dockerhub-password', variable: 'DOCKER_PASS')]) {
+                withCredentials([usernamePassword(
+                        credentialsId: 'dockerhub-password',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS')]) {
                     sh """
-                        echo "${DOCKER_PASS}" | docker login ${DOCKER_REGISTRY} -u ramanred --password-stdin
+                        echo "${DOCKER_PASS}" | docker login ${DOCKER_REGISTRY} -u ${DOCKER_USER} --password-stdin
 
                         docker push ${IMAGE_PREFIX}-incident-service:${BUILD_TAG}
                         docker push ${IMAGE_PREFIX}-ai-copilot:${BUILD_TAG}
