@@ -80,31 +80,37 @@ pipeline {
         // ──────────────────────────────────────────────────────────
         stage('SonarCloud SAST') {
             steps {
-                sh """
-                    docker run --rm \
-                      --volumes-from jenkins \
-                      -w ${WORKSPACE}/apps/incident-service \
-                      maven:3.9-eclipse-temurin-17 \
-                      sh -c "mvn sonar:sonar \
-                        -Dsonar.projectKey=ramanred_sre-copilot-incident-service \
-                        -Dsonar.projectName='sre-copilot-incident-service' \
-                        -Dsonar.organization=${SONAR_ORG} \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.token=${SONAR_TOKEN} \
-                        --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
+                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                    sh """
+                        # Scan incident-service using sonar-scanner-cli
+                        docker run --rm \
+                          --volumes-from jenkins \
+                          -w ${WORKSPACE}/apps/incident-service \
+                          -e SONAR_TOKEN=${SONAR_TOKEN} \
+                          sonarsource/sonar-scanner-cli:latest \
+                          sonar-scanner \
+                            -Dsonar.projectKey=ramanred_sre-copilot-incident-service \
+                            -Dsonar.organization=ramanred \
+                            -Dsonar.host.url=https://sonarcloud.io \
+                            -Dsonar.token=${SONAR_TOKEN} \
+                            -Dsonar.sources=src/main/java \
+                            -Dsonar.java.binaries=target/classes
 
-                    docker run --rm \
-                      --volumes-from jenkins \
-                      -w ${WORKSPACE}/apps/ai-copilot-service \
-                      maven:3.9-eclipse-temurin-17 \
-                      sh -c "mvn sonar:sonar \
-                        -Dsonar.projectKey=ramanred_sre-copilot-ai-copilot \
-                        -Dsonar.projectName='sre-copilot-ai-copilot' \
-                        -Dsonar.organization=${SONAR_ORG} \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.token=${SONAR_TOKEN} \
-                        --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
-                """
+                        # Scan ai-copilot-service using sonar-scanner-cli
+                        docker run --rm \
+                          --volumes-from jenkins \
+                          -w ${WORKSPACE}/apps/ai-copilot-service \
+                          -e SONAR_TOKEN=${SONAR_TOKEN} \
+                          sonarsource/sonar-scanner-cli:latest \
+                          sonar-scanner \
+                            -Dsonar.projectKey=ramanred_sre-copilot-ai-copilot \
+                            -Dsonar.organization=ramanred \
+                            -Dsonar.host.url=https://sonarcloud.io \
+                            -Dsonar.token=${SONAR_TOKEN} \
+                            -Dsonar.sources=src/main/java \
+                            -Dsonar.java.binaries=target/classes
+                    """
+                }
             }
         }
 
