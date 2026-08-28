@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package com.devops.copilot.proto;
+
+option java_multiple_files = true;
+option java_package = "com.devops.copilot.grpc";
+option java_outer_classname = "IncidentCopilotProto";
+
+service IncidentCopilotService {
+  rpc AnalyzeIncident (IncidentAnalysisRequest) returns (IncidentAnalysisResponse);
+  rpc GenerateRemediationScript (RemediationRequest) returns (RemediationResponse);
+}
+
+message IncidentAnalysisRequest {
+  string incident_id = 1;
+  string service_name = 2;
+  string error_logs = 3;
+  string firing_rule = 4;
+  string environment = 5;
+}
+
+message IncidentAnalysisResponse {
+  string incident_id = 1;
+  string root_cause = 2;
+  string confidence_score = 3;
+  repeated string affected_components = 4;
+  string immediate_mitigation = 5;
+  string severity = 6;
+}
+
+message RemediationRequest {
+  string incident_id = 1;
+  string root_cause = 2;
+  string target_system = 3;
+}
+
+message RemediationResponse {
+  string script_type = 1; // e.g., "KUBECTL_ROLLBACK", "ANSIBLE_PLAYBOOK", "BASH"
+  string executable_script = 2;
+  bool requires_manual_approval = 3;
+}
