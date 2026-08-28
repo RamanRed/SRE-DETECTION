@@ -1,4 +1,4 @@
-import { DashboardStats } from '../types';
+import type { DashboardStats } from '../types';
 import { AlertTriangle, Activity, CheckCircle, Clock, Zap } from 'lucide-react';
 
 interface Props {
