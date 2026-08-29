@@ -9,6 +9,7 @@ pipeline {
         SONAR_HOST_URL     = 'https://sonarcloud.io'
         SONAR_ORG          = 'ramanred'
         K3S_KUBECONFIG     = credentials('k3s-kubeconfig')
+        GROQ_API_KEY       = credentials('groq-api-key')
         IMAGE_PREFIX       = "docker.io/ramanred/sre-copilot"
         BUILD_TAG          = "${env.GIT_COMMIT?.take(7) ?: 'latest'}"
     }
@@ -213,18 +214,40 @@ pipeline {
                         sed -i '/certificate-authority-data:/d' ${WORKSPACE}/kubeconfig.tmp
                         sed -i '/server:/a\\    insecure-skip-tls-verify: true' ${WORKSPACE}/kubeconfig.tmp
 
-                        # Deploy via containerized kubectl to AWS EC2 K3s cluster
-                        docker run --rm \
-                          --volumes-from jenkins \
-                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
-                          bitnami/kubectl:latest \
+                        # Create namespace + base config first
+                        docker run --rm \\
+                          --volumes-from jenkins \\
+                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \\
+                          bitnami/kubectl:latest \\
+                          apply -f ${WORKSPACE}/k8s/namespace-config.yml
+
+                        # Create GROQ API key secret from Jenkins credentials (idempotent)
+                        docker run --rm \\
+                          --volumes-from jenkins \\
+                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \\
+                          bitnami/kubectl:latest \\
+                          create secret generic sre-groq-secret \\
+                          --from-literal=GROQ_API_KEY=${GROQ_API_KEY} \\
+                          -n sre-copilot \\
+                          --dry-run=client -o yaml | \\
+                        docker run --rm -i \\
+                          --volumes-from jenkins \\
+                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \\
+                          bitnami/kubectl:latest \\
+                          apply -f -
+
+                        # Deploy all remaining manifests to AWS EC2 K3s cluster
+                        docker run --rm \\
+                          --volumes-from jenkins \\
+                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \\
+                          bitnami/kubectl:latest \\
                           apply -f ${WORKSPACE}/k8s/
 
                         echo '=== Deployment to AWS K3s Cluster Successful ==='
-                        docker run --rm \
-                          --volumes-from jenkins \
-                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
-                          bitnami/kubectl:latest \
+                        docker run --rm \\
+                          --volumes-from jenkins \\
+                          -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \\
+                          bitnami/kubectl:latest \\
                           get pods -n sre-copilot || true
 
                         # Clean up temp kubeconfig from workspace
@@ -233,6 +256,7 @@ pipeline {
                 }
             }
         }
+
     }
 
     post {

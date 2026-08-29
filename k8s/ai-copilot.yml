@@ -39,10 +39,21 @@ spec:
                 configMapKeyRef:
                   name: sre-copilot-config
                   key: SPRING_PROFILES_ACTIVE
+            # Use GROQ's OpenAI-compatible API (secret created by Jenkins via kubectl)
+            - name: SPRING_AI_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sre-groq-secret
+                  key: GROQ_API_KEY
+            - name: SPRING_AI_OPENAI_BASE_URL
+              value: "https://api.groq.com/openai"
+            - name: SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL
+              value: "llama-3.3-70b-versatile"
+            - name: SPRING_AI_OPENAI_CHAT_OPTIONS_TEMPERATURE
+              value: "0.2"
+            # Ollama disabled (no ollama service in cluster)
             - name: SPRING_AI_OLLAMA_BASE_URL
-              value: "http://ollama-service:11434"
-            - name: SPRING_AI_OLLAMA_MODEL
-              value: "qwen2.5-coder:1.5b"
+              value: "http://localhost:11434"
           resources:
             limits:
               memory: "512Mi"

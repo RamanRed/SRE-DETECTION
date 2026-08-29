@@ -6,12 +6,16 @@ spring:
     name: ai-copilot-service
   ai:
     openai:
+      # Supports OpenAI and GROQ (OpenAI-compatible). Override via env:
+      # SPRING_AI_OPENAI_API_KEY, SPRING_AI_OPENAI_BASE_URL, SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL
       api-key: ${SPRING_AI_OPENAI_API_KEY:demo-key}
+      base-url: ${SPRING_AI_OPENAI_BASE_URL:https://api.openai.com}
       chat:
         options:
-          model: ${SPRING_AI_OPENAI_MODEL:gpt-4o-mini}
-          temperature: 0.2
+          model: ${SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL:gpt-4o-mini}
+          temperature: ${SPRING_AI_OPENAI_CHAT_OPTIONS_TEMPERATURE:0.2}
     ollama:
+      # Optional local Ollama. Defaults to localhost so it won't block startup.
       base-url: ${SPRING_AI_OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         options:
