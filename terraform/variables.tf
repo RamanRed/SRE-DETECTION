@@ -39,9 +39,9 @@ variable "private_subnet_b_cidr" {
 }
 
 variable "ec2_instance_type" {
-  description = "EC2 instance type (Free Tier: t3.micro)"
+  description = "EC2 instance type (t3.small = 2GB RAM needed for K3s + Jenkins + Spring Boot apps)"
   type        = string
-  default     = "t3.micro"
+  default     = "t3.small"
 }
 
 variable "rds_instance_class" {
