@@ -203,23 +203,27 @@ pipeline {
                         # kubectl container via --volumes-from. Copy it into the workspace
                         # (under /var/jenkins_home) so the container can reach it.
                         cp \${KUBECONFIG_FILE} ${WORKSPACE}/kubeconfig.tmp
-                        chmod 644 ${WORKSPACE}/kubeconfig.tmp
+                        chmod 600 ${WORKSPACE}/kubeconfig.tmp
+
+                        # K3s TLS cert is issued for private IPs only (10.0.1.23, etc.), not
+                        # the public EC2 IP. Patch the kubeconfig to skip TLS verification so
+                        # all kubectl commands succeed without repeating the flag each time.
+                        sed -i '/certificate-authority-data:/d' ${WORKSPACE}/kubeconfig.tmp
+                        sed -i '/server:/a\\    insecure-skip-tls-verify: true' ${WORKSPACE}/kubeconfig.tmp
 
                         # Deploy via containerized kubectl to AWS EC2 K3s cluster
-                        # --validate=false skips openapi schema download which fails due to
-                        # x509 cert mismatch (K3s cert only has private IPs, not public IP)
                         docker run --rm \
                           --volumes-from jenkins \
                           -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
                           bitnami/kubectl:latest \
-                          apply --validate=false -f ${WORKSPACE}/k8s/
+                          apply -f ${WORKSPACE}/k8s/
 
                         echo '=== Deployment to AWS K3s Cluster Successful ==='
                         docker run --rm \
                           --volumes-from jenkins \
                           -e KUBECONFIG=${WORKSPACE}/kubeconfig.tmp \
                           bitnami/kubectl:latest \
-                          get pods -n sre-copilot --insecure-skip-tls-verify=true || true
+                          get pods -n sre-copilot || true
 
                         # Clean up temp kubeconfig from workspace
                         rm -f ${WORKSPACE}/kubeconfig.tmp
