@@ -206,7 +206,7 @@ pipeline {
                         # kubectl container via --volumes-from. Copy it into the workspace
                         # (under /var/jenkins_home) so the container can reach it.
                         cp \${KUBECONFIG_FILE} ${WORKSPACE}/kubeconfig.tmp
-                        chmod 600 ${WORKSPACE}/kubeconfig.tmp
+                        chmod 666 ${WORKSPACE}/kubeconfig.tmp
 
                         # K3s TLS cert is issued for private IPs only (10.0.1.23, etc.), not
                         # the public EC2 IP. Patch the kubeconfig to skip TLS verification so
