@@ -1,0 +1,10 @@
+node_modules
+dist
+target
+.git
+.gitignore
+*.log
+.terraform
+terraform.tfstate*
+*.pem
+k3s-kubeconfig.yaml

@@ -1,5 +1,5 @@
 import type { Incident } from '../types';
-import { AlertTriangle, Clock, Server, Activity, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Clock, Server, Activity, ChevronRight, BellRing } from 'lucide-react';
 
 interface Props {
   incident: Incident;
@@ -34,6 +34,7 @@ export default function IncidentCard({ incident, onClick }: Props) {
       className="card animate-fade-in"
       style={{ padding: '16px 20px', cursor: 'pointer', position: 'relative' }}
       onClick={() => onClick(incident)}
+      title="Click to inspect incident details and run AI Root-Cause Analysis"
     >
       {/* Severity accent bar */}
       <div style={{
@@ -62,6 +63,9 @@ export default function IncidentCard({ incident, onClick }: Props) {
                 {incident.severity}
               </span>
             )}
+            <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'monospace' }} title="PostgreSQL Incident Record UUID">
+              ID: {incident.id.substring(0, 8)}...
+            </span>
           </div>
 
           <h3 style={{
@@ -77,16 +81,25 @@ export default function IncidentCard({ incident, onClick }: Props) {
           </h3>
 
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+            <span
+              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#60a5fa' }}
+              title={`Microservice component: ${incident.serviceName}`}
+            >
               <Server size={11} />
               {incident.serviceName}
             </span>
+
             <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-muted)' }}>
               <Clock size={11} />
               {timeAgo(incident.createdAt)}
             </span>
+
             {incident.firingRule && (
-              <span style={{ fontSize: 12, color: '#6366f1', fontFamily: 'monospace' }}>
+              <span
+                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#a78bfa', fontFamily: 'monospace' }}
+                title={`Prometheus Alert Rule: ${incident.firingRule} (Triggered by SLO violation)`}
+              >
+                <BellRing size={11} />
                 {incident.firingRule}
               </span>
             )}
@@ -99,7 +112,7 @@ export default function IncidentCard({ incident, onClick }: Props) {
               width: 8, height: 8, borderRadius: '50%',
               background: incident.status === 'ANALYZING' ? '#f59e0b' : '#ef4444',
               flexShrink: 0,
-            }} />
+            }} title="Incident is currently active / awaiting triage" />
           )}
           <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} />
         </div>

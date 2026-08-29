@@ -6,6 +6,11 @@ import type {
   DashboardStats,
   PageResponse,
   CreateIncidentPayload,
+  PipelineBuild,
+  DoraMetrics,
+  UserProfile,
+  PlatformIntegrationConfig,
+  PlatformSyncResult,
 } from '../types';
 
 const api = axios.create({
@@ -31,7 +36,6 @@ api.interceptors.response.use(
 );
 
 // ─── Incident API ─────────────────────────────────────────────────
-
 export const incidentApi = {
   create: (payload: CreateIncidentPayload) =>
     api.post<Incident>('/incidents', payload).then((r) => r.data),
@@ -59,6 +63,42 @@ export const incidentApi = {
 
   getDashboardStats: () =>
     api.get<DashboardStats>('/incidents/stats/dashboard').then((r) => r.data),
+};
+
+// ─── CI/CD Pipeline & DORA API ────────────────────────────────────
+export const pipelineApi = {
+  getBuilds: (page = 0, size = 20) =>
+    api.get<PageResponse<PipelineBuild>>('/ci/builds', { params: { page, size } }).then((r) => r.data),
+
+  getDoraMetrics: () =>
+    api.get<DoraMetrics>('/ci/metrics/dora').then((r) => r.data),
+
+  triggerSync: () =>
+    api.post<{ message: string; doraMetrics: DoraMetrics }>('/ci/sync').then((r) => r.data),
+
+  sendWebhook: (payload: Partial<PipelineBuild>) =>
+    api.post<PipelineBuild>('/ci/webhook', payload).then((r) => r.data),
+};
+
+// ─── Auth API ─────────────────────────────────────────────────────
+export const authApi = {
+  login: (username: string, role: string) =>
+    api.post<UserProfile>('/auth/login', { username, role }).then((r) => r.data),
+
+  getMe: (userId: string) =>
+    api.get<UserProfile>('/auth/me', { params: { userId } }).then((r) => r.data),
+};
+
+// ─── Platform Integrations API ────────────────────────────────────
+export const integrationApi = {
+  getConfig: (userId: string) =>
+    api.get<PlatformIntegrationConfig>('/integrations/config', { params: { userId } }).then((r) => r.data),
+
+  saveConfig: (payload: Partial<PlatformIntegrationConfig>) =>
+    api.post<PlatformIntegrationConfig>('/integrations/config', payload).then((r) => r.data),
+
+  syncPlatforms: (userId: string) =>
+    api.post<PlatformSyncResult>('/integrations/sync', null, { params: { userId } }).then((r) => r.data),
 };
 
 export default api;

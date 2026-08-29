@@ -34,6 +34,10 @@ spec:
               name: management
               protocol: TCP
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:TieredStopAtLevel=1 -Xmx200m -Xms64m"
+            - name: SPRING_AUTOCONFIGURE_EXCLUDE
+              value: "org.springframework.ai.model.ollama.autoconfigure.OllamaChatAutoConfiguration"
             - name: SPRING_PROFILES_ACTIVE
               valueFrom:
                 configMapKeyRef:
@@ -51,13 +55,14 @@ spec:
               value: "llama-3.3-70b-versatile"
             - name: SPRING_AI_OPENAI_CHAT_OPTIONS_TEMPERATURE
               value: "0.2"
-            # Ollama disabled (no ollama service in cluster)
-            - name: SPRING_AI_OLLAMA_BASE_URL
-              value: "http://localhost:11434"
+            # Ollama not deployed in K8s — Groq is the active AI backend
           resources:
+            requests:
+              memory: "220Mi"
+              cpu:    "100m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "350Mi"
+              cpu:    "400m"
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

@@ -36,6 +36,8 @@ spec:
               name: http
               protocol: TCP
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:TieredStopAtLevel=1 -Xmx160m -Xms48m -XX:+UseSerialGC"
             - name: SPRING_PROFILES_ACTIVE
               valueFrom:
                 configMapKeyRef:
@@ -74,21 +76,26 @@ spec:
                   name: sre-copilot-config
                   key: AI_COPILOT_PORT
           resources:
+            requests:
+              memory: "200Mi"
+              cpu:    "100m"
             limits:
-              memory: "512Mi"
-              cpu:    "500m"
+              memory: "320Mi"
+              cpu:    "400m"
           readinessProbe:
             httpGet:
-              path: /api/v1/incidents/health
+              path: /actuator/health/readiness
               port: 8081
             initialDelaySeconds: 40
             periodSeconds: 10
+            failureThreshold: 5
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: 8081
             initialDelaySeconds: 60
             periodSeconds: 20
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service

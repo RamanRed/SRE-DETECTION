@@ -253,7 +253,7 @@ data "aws_rds_engine_version" "postgres" {
 resource "aws_db_instance" "postgres" {
   identifier              = "${var.project_name}-postgres"
   engine                  = "postgres"
-  engine_version          = data.aws_rds_engine_version.postgres.version
+  engine_version          = "16.3"
   instance_class          = var.rds_instance_class  # db.t3.micro (Free Tier)
   allocated_storage       = 20
   max_allocated_storage   = 25

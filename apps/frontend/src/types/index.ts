@@ -63,3 +63,73 @@ export interface CreateIncidentPayload {
   environment: string;
   createdBy?: string;
 }
+
+export interface PipelineBuild {
+  id: string;
+  pipelineName: string;
+  buildNumber: number;
+  ciTool: 'JENKINS' | 'GITHUB_ACTIONS' | 'GITLAB_CI';
+  status: 'SUCCESS' | 'FAILURE' | 'RUNNING' | 'UNSTABLE';
+  gitCommit: string;
+  gitBranch: string;
+  commitMessage?: string;
+  author: string;
+  durationSeconds: number;
+  testsPassed: number;
+  testsFailed: number;
+  vulnerabilitiesDetected: number;
+  environment: string;
+  logSnippet?: string;
+  buildUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DoraMetrics {
+  deploymentFrequency: string;
+  leadTimeForChanges: string;
+  changeFailureRate: number;
+  meanTimeToRecovery: string;
+  totalBuilds: number;
+  successfulBuilds: number;
+  failedBuilds: number;
+  recentBuilds: PipelineBuild[];
+}
+
+export interface UserProfile {
+  authenticated: boolean;
+  token: string;
+  userId: string;
+  username: string;
+  email: string;
+  role: 'SRE_LEAD' | 'DEVOPS_ENGINEER' | 'EVALUATOR';
+  avatarUrl?: string;
+}
+
+export interface PlatformIntegrationConfig {
+  id?: number;
+  userId: string;
+  username?: string;
+  githubToken?: string;
+  githubRepo?: string; // e.g. "RamanRed/SRE-DETECTION"
+  githubBranch?: string; // e.g. "master"
+  githubStatus?: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  githubTokenConfigured?: boolean;
+  jenkinsUrl?: string;
+  jenkinsUsername?: string;
+  jenkinsApiToken?: string;
+  jenkinsJobName?: string;
+  jenkinsStatus?: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  jenkinsTokenConfigured?: boolean;
+  lastSyncTime?: string;
+  message?: string;
+}
+
+export interface PlatformSyncResult {
+  success: boolean;
+  githubStatus: string;
+  jenkinsStatus: string;
+  commitsSynced: number;
+  buildsSynced: number;
+  message: string;
+}

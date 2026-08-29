@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: ai-copilot-service
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.ollama.autoconfigure.OllamaChatAutoConfiguration
   ai:
     openai:
       # Supports OpenAI and GROQ (OpenAI-compatible). Override via env:

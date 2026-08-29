@@ -21,8 +21,7 @@ data:
   AI_COPILOT_PORT:  "9090"
   SPRING_PROFILES_ACTIVE: "kubernetes"
 ---
-# Secret: database credentials (base64 encoded in production use kubectl create secret)
-# kubectl create secret generic sre-db-secret --from-literal=DB_USERNAME=sreuser --from-literal=DB_PASSWORD=srepassword -n sre-copilot
+# Secret: database credentials
 apiVersion: v1
 kind: Secret
 metadata:
@@ -32,3 +31,17 @@ type: Opaque
 stringData:
   DB_USERNAME: "sreuser"
   DB_PASSWORD: "srepassword"
+---
+# Secret: Groq API Key
+# In Jenkins pipeline this is created from the 'groq-api-key' credential.
+# For manual deploy run:
+#   kubectl create secret generic sre-groq-secret \
+#     --from-literal=GROQ_API_KEY=<your-key> -n sre-copilot --dry-run=client -o yaml | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sre-groq-secret
+  namespace: sre-copilot
+type: Opaque
+stringData:
+  GROQ_API_KEY: "REPLACE_WITH_GROQ_API_KEY_FROM_JENKINS"
