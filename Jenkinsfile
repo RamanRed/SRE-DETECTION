@@ -41,11 +41,12 @@ pipeline {
                 stage('incident-service') {
                     steps {
                         sh """
+                            mkdir -p /var/jenkins_home/.m2/repository
                             docker run --rm \
                               --volumes-from jenkins \
                               -w ${WORKSPACE}/apps/incident-service \
                               maven:3.9-eclipse-temurin-17 \
-                              sh -c "mvn clean test -DskipTests=false --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
+                              sh -c "mvn clean test -DskipTests=false -Dmaven.repo.local=/var/jenkins_home/.m2/repository -Dhttp.keepAlive=false -Dmaven.wagon.http.retryHandler.count=5 -Dmaven.wagon.http.pool=false --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
                         """
                     }
                     post {
@@ -58,11 +59,12 @@ pipeline {
                 stage('ai-copilot-service') {
                     steps {
                         sh """
+                            mkdir -p /var/jenkins_home/.m2/repository
                             docker run --rm \
                               --volumes-from jenkins \
                               -w ${WORKSPACE}/apps/ai-copilot-service \
                               maven:3.9-eclipse-temurin-17 \
-                              sh -c "mvn clean test -DskipTests=false --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
+                              sh -c "mvn clean test -DskipTests=false -Dmaven.repo.local=/var/jenkins_home/.m2/repository -Dhttp.keepAlive=false -Dmaven.wagon.http.retryHandler.count=5 -Dmaven.wagon.http.pool=false --no-transfer-progress && chmod -R 777 ${WORKSPACE}"
                         """
                     }
                     post {
