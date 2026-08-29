@@ -1,0 +1,54 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-postgres
+  namespace: sre-copilot
+  labels:
+    app: sre-postgres
+    component: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sre-postgres
+  template:
+    metadata:
+      labels:
+        app: sre-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              value: "sredb"
+            - name: POSTGRES_USER
+              value: "sreuser"
+            - name: POSTGRES_PASSWORD
+              value: "srepassword"
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sre-postgres-svc
+  namespace: sre-copilot
+  labels:
+    app: sre-postgres
+spec:
+  selector:
+    app: sre-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
