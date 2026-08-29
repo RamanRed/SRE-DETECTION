@@ -44,9 +44,6 @@ spec:
             - name: SPRING_AI_OLLAMA_MODEL
               value: "qwen2.5-coder:1.5b"
           resources:
-            requests:
-              memory: "128Mi"
-              cpu: "50m"
             limits:
               memory: "512Mi"
               cpu: "500m"
