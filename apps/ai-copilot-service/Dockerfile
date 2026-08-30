@@ -1,38 +1,36 @@
-# ─── Stage 1: Build ────────────────────────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-17 AS builder
+# syntax=docker/dockerfile:1.7
 
-WORKDIR /workspace
+FROM golang:1.25-alpine AS builder
 
-# Copy proto contract first (shared dependency)
-COPY proto/ /workspace/proto/
+WORKDIR /src
 
-# Copy service source
-COPY apps/ai-copilot-service/pom.xml ./apps/ai-copilot-service/
-COPY apps/ai-copilot-service/src    ./apps/ai-copilot-service/src
+# Cache modules separately from source code.
+COPY go.mod go.sum ./
+RUN go mod download
 
-WORKDIR /workspace/apps/ai-copilot-service
+COPY . .
+RUN CGO_ENABLED=0 go build \
+      -trimpath \
+      -ldflags="-s -w" \
+      -o /out/ai-copilot \
+      ./apps/ai-copilot-service/cmd/ai-copilot
 
-# Download dependencies (layer-cached)
-RUN mvn dependency:go-offline -q
+FROM alpine:3.21 AS runtime
 
-# Build and package (skip tests during Docker build; tests run in CI)
-RUN mvn clean package -DskipTests -q
-
-# ─── Stage 2: Runtime ──────────────────────────────────────────────────────
-FROM eclipse-temurin:17-jre-alpine AS runtime
-
-# Security: run as non-root
-RUN addgroup -S sre && adduser -S sreuser -G sre
-USER sreuser
+# CA certificates are required for OpenAI-compatible HTTPS providers. BusyBox
+# wget is retained so Docker/Compose can execute the image healthcheck.
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S -g 10001 sre \
+    && adduser -S -D -H -u 10001 -G sre sreuser
 
 WORKDIR /app
+COPY --from=builder /out/ai-copilot /app/ai-copilot
 
-COPY --from=builder /workspace/apps/ai-copilot-service/target/*.jar app.jar
+USER 10001:10001
 
-# Expose gRPC and management ports
 EXPOSE 9090 8082
 
-# JVM tuning for container environments
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8082/actuator/health/readiness >/dev/null || exit 1
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["/app/ai-copilot"]

@@ -16,14 +16,14 @@ groups:
         annotations:
           summary: "AI Triage P95 Latency SLO Breach"
           description: "AI inference P95 latency is {{ $value | humanizeDuration }}  — exceeds 1.5s SLO threshold."
-          runbook: "https://github.com/your-org/sre-copilot/blob/main/docs/runbook.md#ai-latency"
+          runbook: "https://github.com/RamanRed/SRE-DETECTION/blob/master/README.md"
 
       # ── Incident Service 5xx Error Rate > 5% ─────────────────────────────
       - alert: IncidentServiceHighErrorRate
         expr: |
-          sum(rate(http_server_requests_seconds_count{application="incident-service",status=~"5.."}[5m]))
+          sum(rate(http_server_requests_total{application="incident-service",status=~"5.."}[5m]))
           /
-          sum(rate(http_server_requests_seconds_count{application="incident-service"}[5m])) > 0.05
+          clamp_min(sum(rate(http_server_requests_total{application="incident-service"}[5m])), 0.001) > 0.05
         for: 1m
         labels:
           severity: critical
@@ -32,34 +32,47 @@ groups:
           summary: "Incident Service 5xx error rate > 5%"
           description: "Error rate is {{ $value | humanizePercentage }}"
 
-      # ── HikariCP Connection Pool Exhausted ────────────────────────────────
+      # ── pgx Connection Pool Waiters ───────────────────────────────────────
       - alert: DatabaseConnectionPoolExhausted
         expr: |
-          hikaricp_connections_pending{application="incident-service"} > 5
+          increase(
+            db_pool_empty_acquire_total{application="incident-service"}[2m]
+          ) > 5
+          or
+          max_over_time(
+            db_pool_waiting_requests{application="incident-service"}[2m]
+          ) > 5
         for: 1m
         labels:
           severity: critical
           team: sre
         annotations:
-          summary: "HikariCP connection pool nearly exhausted"
-          description: "{{ $value }} threads are waiting for DB connections in pool '{{ $labels.pool }}'."
+          summary: "PostgreSQL connection pool nearly exhausted"
+          description: "More than five incident-service acquisitions had to wait for a database connection in the last two minutes."
 
-      # ── JVM Heap Usage > 85% ──────────────────────────────────────────────
-      - alert: JvmHeapUsageHigh
+      # ── Go service container memory > ~85% of the 128 Mi limit ────────────
+      - alert: GoServiceMemoryHigh
         expr: |
-          (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.85
+          container_memory_working_set_bytes{
+            namespace="sre-copilot",
+            container=~"incident-service|ai-copilot-service"
+          } > 115343360
         for: 2m
         labels:
           severity: warning
           team: sre
         annotations:
-          summary: "JVM Heap usage > 85% on {{ $labels.application }}"
-          description: "Heap is at {{ $value | humanizePercentage }}. Consider increasing pod memory limits."
+          summary: "Go service memory is near its pod limit"
+          description: "{{ $labels.pod }}/{{ $labels.container }} is using {{ $value | humanize1024 }}B of its 128 Mi limit."
 
       # ── Pod Restart Spike ─────────────────────────────────────────────────
       - alert: PodFrequentRestarts
         expr: |
-          increase(kube_pod_container_status_restarts_total[15m]) > 3
+          changes(
+            (max by (namespace, pod, container) (
+              container_start_time_seconds{namespace="sre-copilot",container!=""}
+            ))[15m:1m]
+          ) > 3
         for: 0m
         labels:
           severity: critical

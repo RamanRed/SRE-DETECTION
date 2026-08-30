@@ -1,8 +1,8 @@
 ################################################################################
 # SRE Copilot Platform — Terraform AWS Infrastructure
 # Provisions: VPC, Public Subnet, Security Groups, EC2, RDS PostgreSQL
-# Zero-Cost: Uses only AWS Free Tier eligible resources
-# Target: Single t3.micro EC2 running K3s + db.t3.micro RDS PostgreSQL
+# Cost-conscious defaults; eligibility and prices depend on the AWS account.
+# Target: Single t3.small EC2 running K3s + db.t3.micro RDS PostgreSQL
 ################################################################################
 
 terraform {
@@ -103,7 +103,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "ec2_sg" {
   name        = "${var.project_name}-ec2-sg"
-  description = "SRE Copilot EC2 - Allow SSH, HTTP, HTTPS, K8s NodePort"
+  description = "SRE Copilot EC2 - trusted administration and Traefik ingress"
   vpc_id      = aws_vpc.sre_vpc.id
 
   ingress {
@@ -114,18 +114,18 @@ resource "aws_security_group" "ec2_sg" {
     cidr_blocks = [var.allowed_cidr]
   }
   ingress {
-    description = "HTTP"
+    description = "Traefik HTTP from explicitly trusted clients"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.public_ingress_cidrs
   }
   ingress {
-    description = "HTTPS"
+    description = "Traefik HTTPS from explicitly trusted clients"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.public_ingress_cidrs
   }
   ingress {
     description = "K3s API Server"
@@ -134,26 +134,15 @@ resource "aws_security_group" "ec2_sg" {
     protocol    = "tcp"
     cidr_blocks = [var.allowed_cidr]
   }
-  ingress {
-    description = "Incident Service REST"
-    from_port   = 8081
-    to_port     = 8081
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    description = "AI Copilot gRPC"
-    from_port   = 9090
-    to_port     = 9090
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-  ingress {
-    description = "Prometheus/Grafana"
-    from_port   = 3000
-    to_port     = 3001
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_cidr]
+  dynamic "ingress" {
+    for_each = var.enable_observability_ingress ? [1] : []
+    content {
+      description = "Optional Prometheus and Grafana administration"
+      from_port   = 3000
+      to_port     = 3001
+      protocol    = "tcp"
+      cidr_blocks = [var.allowed_cidr]
+    }
   }
   egress {
     from_port   = 0
@@ -188,7 +177,7 @@ resource "aws_security_group" "rds_sg" {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# EC2 Instance (Free Tier: t3.micro, 750h/month for 12 months)
+# EC2 Instance (t3.small default; verify current account pricing before apply)
 # ──────────────────────────────────────────────────────────────────────────────
 
 resource "aws_key_pair" "sre_key" {
@@ -210,16 +199,26 @@ resource "aws_instance" "sre_node" {
     encrypted   = true
   }
 
-  # 2GB swap for K3s + Spring Boot on t3.micro
+  # 2GB swap provides headroom for K3s rollouts and administrative tasks.
   user_data = <<-EOF
     #!/bin/bash
-    set -ex
-    # Swap for lightweight K8s
-    fallocate -l 2G /swapfile
-    chmod 600 /swapfile
-    mkswap /swapfile
-    swapon /swapfile
-    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    set -Eeuo pipefail
+    # Idempotent swap setup for lightweight Kubernetes.
+    if [ ! -f /swapfile ]; then
+      fallocate -l 2G /swapfile
+      chmod 600 /swapfile
+      mkswap /swapfile
+    fi
+    if ! swapon --show=NAME --noheadings | grep -qx '/swapfile'; then
+      swapon /swapfile
+    fi
+    if ! grep -q '^/swapfile[[:space:]]' /etc/fstab; then
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+    # Ubuntu 22.04 uses cgroup v2; fail bootstrap if swap accounting is absent.
+    test -f /sys/fs/cgroup/memory.swap.max
+    grep -qw memory /sys/fs/cgroup/cgroup.controllers
+    swapon --show
     # Install git and curl
     apt-get update -qq
     apt-get install -y git curl wget unzip
@@ -236,8 +235,8 @@ resource "aws_eip" "sre_eip" {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# RDS PostgreSQL (Free Tier: db.t3.micro, 750h/month for 12 months)
-# IMPORTANT: Use Single-AZ; avoid Multi-AZ and Aurora Serverless (both cost $)
+# RDS PostgreSQL (db.t3.micro, Single-AZ by default)
+# Verify current pricing and account credits before applying.
 # ──────────────────────────────────────────────────────────────────────────────
 
 resource "aws_db_subnet_group" "rds_subnets" {
@@ -254,7 +253,7 @@ resource "aws_db_instance" "postgres" {
   identifier              = "${var.project_name}-postgres"
   engine                  = "postgres"
   engine_version          = "16.3"
-  instance_class          = var.rds_instance_class  # db.t3.micro (Free Tier)
+  instance_class          = var.rds_instance_class
   allocated_storage       = 20
   max_allocated_storage   = 25
   storage_type            = "gp2"
@@ -267,7 +266,7 @@ resource "aws_db_instance" "postgres" {
   publicly_accessible     = false
   skip_final_snapshot     = true
   backup_retention_period = 1
-  multi_az                = false  # Single-AZ = Free Tier safe
+  multi_az                = false  # Cost-conscious development default
   deletion_protection     = false
 
   tags = merge(var.common_tags, { Name = "${var.project_name}-rds" })

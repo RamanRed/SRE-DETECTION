@@ -1,37 +1,25 @@
-# SRE Copilot Platform — Bug Audit, CI/CD Integration & DORA Telemetry
+# Current platform status
 
-> **Audit & Enhancement Date:** 2026-08-30  
-> **Status:** All bugs resolved · CI/CD & DORA Telemetry section live · Zero hardcoded credentials
+The platform backends now build and run in Go 1.25 while retaining the frontend
+REST contract and the protobuf gRPC contract.
 
----
+- Default local mode uses deterministic heuristic AI and requires no secret.
+- Cloud inference uses any OpenAI-compatible provider through `OPENAI_*`.
+- Local Ollama is available through the opt-in `ollama` Compose profile.
+- Kubernetes backend limits are 128 Mi with `GOMEMLIMIT=96MiB`.
+- PostgreSQL uses persistent storage and health probes in Kubernetes.
+- GitHub Actions and Jenkins run Go format, vet, race-test, coverage, frontend,
+  and container build gates.
+- Jenkins publishes full-commit tags, deploys resolved registry digests, waits
+  for rollouts, and runs smoke checks.
+- Image publication, deployment approval, and telemetry are restricted to
+  `main`/`master`; temporary registry and cluster credentials are cleaned up.
+- K3s is pinned to a supported 1.36 patch, uses Traefik consistently, and the
+  2 GiB node swap is verified through cgroup v2.
+- Terraform rejects global management/Ingress CIDRs. The HTTP bootstrap-auth
+  Ingress must remain internal until TLS and federated identity are added.
+- CI/CD and DORA endpoints remain available under `/api/v1/ci`.
 
-## 1. CI/CD Pipeline Integration & DORA Evaluation Hub (NEW FEATURE)
-
-- **Dedicated Dashboard Section:** Top navigation bar now includes **"CI/CD Pipelines & DORA"** alongside **"Incidents Triage"**.
-- **Live DORA Metrics Engine:**
-  - **Deployment Frequency:** `3.5 deploys/day` (Elite tier)
-  - **Lead Time for Changes:** `1m 47s` (Commit to Prod deployment)
-  - **Change Failure Rate:** `0.0%` (Elite < 15%)
-  - **Mean Time to Recovery (MTTR):** `8m 30s` (Accelerated by automated AI Triage)
-- **CI Server Integrations:**
-  - **Jenkins CI:** Automated post-build webhook integration (`POST /api/v1/ci/webhook`) reporting Build #, Git SHA, Test results, and CVE scan status.
-  - **GitHub Actions:** Multi-branch workflow telemetry tracking (`ci.yml`).
-  - **Interactive Evaluation Buttons:** "Sync Jenkins" and "Trigger Pipeline Webhook" to demonstrate real-time telemetry updates.
-
----
-
-## 2. Zero Hardcoding & Dynamic Configuration
-
-- **Environment Template:** Added [.env.example](file:///c:/Users/raman/Desktop/trainer%20module/SRE%20PROJECT/.env.example) and parameterized all secrets.
-- **Dynamic Secrets:** Database credentials, Groq API keys, Jenkins tokens, and instance hosts are dynamically resolved from environment variables and Kubernetes secrets.
-- **Frontend Reverse Proxy:** Nginx proxies all `/api/*` requests dynamically to internal microservices with zero static IP bindings.
-
----
-
-## 3. Live Platform Access
-
-- **Public Dashboard:** [http://16.16.175.206](http://16.16.175.206)
-- **Incidents Triage View:** [http://16.16.175.206](http://16.16.175.206) (Tab: Incidents Triage)
-- **CI/CD & DORA Hub:** [http://16.16.175.206](http://16.16.175.206) (Tab: CI/CD Pipelines & DORA)
-- **DORA Metrics API:** `http://16.16.175.206/api/v1/ci/metrics/dora`
-- **CI Webhook API:** `http://16.16.175.206/api/v1/ci/webhook`
+See `README.md` for commands and `SRE-PROJECT-FIXES-README.md` for operational
+details. Configuration files do not by themselves install the full
+Prometheus/Grafana/ELK stack.

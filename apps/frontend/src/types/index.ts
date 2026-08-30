@@ -28,6 +28,13 @@ export interface TriageResult {
   severity: IncidentSeverity;
   affectedComponents: string[];
   incidentStatus: IncidentStatus;
+  unifiedDiff?: string;
+  verificationPlan?: string;
+  rollbackPlan?: string;
+  citedSourcePaths?: string[];
+  repositoryUrl?: string;
+  commitSha?: string;
+  sourceReferences?: string[];
 }
 
 export interface RemediationResult {
@@ -37,6 +44,11 @@ export interface RemediationResult {
   executableScript: string;
   requiresManualApproval: boolean;
   executionStatus: ExecutionStatus;
+  incidentStatus?: IncidentStatus;
+  message?: string;
+  unifiedDiff?: string;
+  verificationPlan?: string;
+  rollbackPlan?: string;
 }
 
 export interface DashboardStats {
@@ -68,8 +80,8 @@ export interface PipelineBuild {
   id: string;
   pipelineName: string;
   buildNumber: number;
-  ciTool: 'JENKINS' | 'GITHUB_ACTIONS' | 'GITLAB_CI';
-  status: 'SUCCESS' | 'FAILURE' | 'RUNNING' | 'UNSTABLE';
+  ciTool: 'JENKINS' | 'GITHUB_ACTIONS' | 'GITLAB_CI' | 'KUBERNETES_JOB';
+  status: 'SUCCESS' | 'FAILURE' | 'RUNNING' | 'QUEUED' | 'UNSTABLE' | 'CANCELLED' | 'TIMED_OUT';
   gitCommit: string;
   gitBranch: string;
   commitMessage?: string;
@@ -86,6 +98,7 @@ export interface PipelineBuild {
 }
 
 export interface DoraMetrics {
+  dataAvailable: boolean;
   deploymentFrequency: string;
   leadTimeForChanges: string;
   changeFailureRate: number;
@@ -94,6 +107,9 @@ export interface DoraMetrics {
   successfulBuilds: number;
   failedBuilds: number;
   recentBuilds: PipelineBuild[];
+  asOf?: string;
+  calculatedAt?: string;
+  generatedAt?: string;
 }
 
 export interface UserProfile {
@@ -106,29 +122,75 @@ export interface UserProfile {
   avatarUrl?: string;
 }
 
+export type RepositoryProvider = 'GITHUB' | 'GITLAB' | 'BITBUCKET';
+export type PipelineEngine = 'JENKINS' | 'GITHUB_ACTIONS' | 'KUBERNETES_JOB';
+export type PollingCadence = '5_MINUTES' | '15_MINUTES' | '1_HOUR' | 'DAILY_CRON';
+export type IntegrationStatus = 'CONNECTED' | 'SYNCING' | 'DISCONNECTED' | 'ERROR';
+
 export interface PlatformIntegrationConfig {
   id?: number;
   userId: string;
   username?: string;
+  repositoryProvider?: RepositoryProvider;
+  repositoryUrl?: string;
+  targetBranch?: string;
+  repositoryToken?: string;
+  repositoryTokenConfigured?: boolean;
+  repositoryStatus?: IntegrationStatus;
+  pipelineEngine?: PipelineEngine;
+  ciBaseUrl?: string;
+  ciUsername?: string;
+  ciToken?: string;
+  ciTokenConfigured?: boolean;
+  jobName?: string;
+  pollingCadence?: PollingCadence;
+  autoRebuild?: boolean;
+  autoAITriage?: boolean;
+  status?: IntegrationStatus;
+  lastPolledCommit?: string;
+  lastError?: string;
+
+  // Legacy aliases remain during the API migration so existing saved records
+  // can be edited without exposing or re-entering their credentials.
   githubToken?: string;
   githubRepo?: string; // e.g. "RamanRed/SRE-DETECTION"
   githubBranch?: string; // e.g. "master"
-  githubStatus?: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  githubStatus?: IntegrationStatus;
   githubTokenConfigured?: boolean;
   jenkinsUrl?: string;
   jenkinsUsername?: string;
   jenkinsApiToken?: string;
   jenkinsJobName?: string;
-  jenkinsStatus?: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  jenkinsStatus?: IntegrationStatus;
   jenkinsTokenConfigured?: boolean;
   lastSyncTime?: string;
   message?: string;
 }
 
+export interface IntegrationConnectPayload {
+  userId: string;
+  username?: string;
+  repositoryProvider: RepositoryProvider;
+  repositoryUrl: string;
+  targetBranch: string;
+  repositoryToken?: string;
+  pipelineEngine: PipelineEngine;
+  ciBaseUrl?: string;
+  ciUsername?: string;
+  ciToken?: string;
+  jobName: string;
+  pollingCadence: PollingCadence;
+  autoRebuild: boolean;
+  autoAITriage: boolean;
+}
+
 export interface PlatformSyncResult {
   success: boolean;
-  githubStatus: string;
-  jenkinsStatus: string;
+  status?: IntegrationStatus;
+  githubStatus?: string;
+  jenkinsStatus?: string;
+  repositoryStatus?: string;
+  ciStatus?: string;
   commitsSynced: number;
   buildsSynced: number;
   message: string;

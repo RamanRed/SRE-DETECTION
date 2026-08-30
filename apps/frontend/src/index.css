@@ -1,7 +1,7 @@
-@import "tailwindcss";
-
 /* ─── Google Fonts ─────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@import "tailwindcss";
 
 /* ─── Design Tokens ────────────────────────────────────── */
 :root {
@@ -80,6 +80,9 @@ html, body, #root {
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 8px rgba(99,102,241,0.3); }
   50%       { box-shadow: 0 0 20px rgba(99,102,241,0.6); }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .animate-pulse-dot   { animation: pulse-dot 1.5s ease-in-out infinite; }
@@ -222,6 +225,38 @@ html, body, #root {
 
 textarea.input { resize: vertical; min-height: 100px; }
 
+/* ─── Integration Hub ──────────────────────────────────── */
+.integration-grid {
+  display: grid;
+  gap: 12px;
+}
+.integration-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.integration-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.integration-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.integration-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-primary);
+}
+
+@media (max-width: 680px) {
+  .integration-grid-two,
+  .integration-grid-three {
+    grid-template-columns: 1fr;
+  }
+  .integration-grid > label,
+  .integration-grid > div {
+    grid-column: 1 !important;
+  }
+}
+
 /* ─── Modal backdrop ─────────────────────────────────────── */
 .modal-backdrop {
   position: fixed;
@@ -244,6 +279,12 @@ textarea.input { resize: vertical; min-height: 100px; }
   max-height: 90vh;
   overflow-y: auto;
   animation: slide-in-right 0.25s ease;
+}
+
+.build-row:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: -2px;
+  background: rgba(99,102,241,0.08);
 }
 
 /* ─── Sidebar ────────────────────────────────────────────── */

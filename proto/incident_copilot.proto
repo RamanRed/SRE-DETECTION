@@ -5,6 +5,7 @@ package com.devops.copilot.proto;
 option java_multiple_files = true;
 option java_package = "com.devops.copilot.grpc";
 option java_outer_classname = "IncidentCopilotProto";
+option go_package = "github.com/RamanRed/SRE-DETECTION/gen/copilotpb;copilotpb";
 
 service IncidentCopilotService {
   rpc AnalyzeIncident (IncidentAnalysisRequest) returns (IncidentAnalysisResponse);
@@ -17,6 +18,21 @@ message IncidentAnalysisRequest {
   string error_logs = 3;
   string firing_rule = 4;
   string environment = 5;
+  string provider = 6;
+  string repository = 7;
+  string branch = 8;
+  string commit_sha = 9;
+  string commit_message = 10;
+  repeated SourceSnippet source_snippets = 11;
+  string ci_provider = 12;
+  string build_url = 13;
+}
+
+message SourceSnippet {
+  string path = 1;
+  string content = 2;
+  int32 start_line = 3;
+  int32 end_line = 4;
 }
 
 message IncidentAnalysisResponse {
@@ -26,6 +42,10 @@ message IncidentAnalysisResponse {
   repeated string affected_components = 4;
   string immediate_mitigation = 5;
   string severity = 6;
+  string unified_diff = 7;
+  string verification_plan = 8;
+  string rollback_plan = 9;
+  repeated string cited_source_paths = 10;
 }
 
 message RemediationRequest {
@@ -38,4 +58,7 @@ message RemediationResponse {
   string script_type = 1; // e.g., "KUBECTL_ROLLBACK", "ANSIBLE_PLAYBOOK", "BASH"
   string executable_script = 2;
   bool requires_manual_approval = 3;
+  string unified_diff = 4;
+  string verification_plan = 5;
+  string rollback_plan = 6;
 }

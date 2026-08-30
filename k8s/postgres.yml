@@ -9,6 +9,10 @@ metadata:
     component: database
 spec:
   replicas: 1
+  # A second PostgreSQL process must never mount the same PGDATA during an
+  # update. Recreate preserves the PVC while stopping the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: sre-postgres
@@ -25,13 +29,25 @@ spec:
               name: postgres
           env:
             - name: POSTGRES_DB
-              value: "sredb"
+              valueFrom:
+                configMapKeyRef:
+                  name: sre-copilot-config
+                  key: DB_NAME
             - name: POSTGRES_USER
-              value: "sreuser"
+              valueFrom:
+                secretKeyRef:
+                  name: sre-db-secret
+                  key: DB_USERNAME
             - name: POSTGRES_PASSWORD
-              value: "srepassword"
+              valueFrom:
+                secretKeyRef:
+                  name: sre-db-secret
+                  key: DB_PASSWORD
             - name: PGDATA
               value: "/var/lib/postgresql/data/pgdata"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
           resources:
             requests:
               memory: "128Mi"
@@ -39,6 +55,27 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "250m"
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: sre-postgres-data
 ---
 apiVersion: v1
 kind: Service
@@ -55,3 +92,17 @@ spec:
       port: 5432
       targetPort: 5432
   type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sre-postgres-data
+  namespace: sre-copilot
+  labels:
+    app: sre-postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

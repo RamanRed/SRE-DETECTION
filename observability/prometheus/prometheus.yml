@@ -3,7 +3,7 @@ global:
   evaluation_interval: 15s
   external_labels:
     monitor: 'sre-copilot-monitor'
-    environment: 'production'
+    environment: 'demo'
 
 rule_files:
   - "alerts/*.yml"
@@ -67,3 +67,22 @@ scrape_configs:
         regex: ([^:]+)(?::\d+)?;(\d+)
         replacement: $1:$2
         target_label: __address__
+
+  # ── Kubelet/cAdvisor container memory and restart telemetry ───
+  # Requires Prometheus to run in-cluster with k8s/prometheus-rbac.yml.
+  - job_name: 'kubernetes-cadvisor'
+    scheme: https
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: __metrics_path__
+        regex: (.+)
+        replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor

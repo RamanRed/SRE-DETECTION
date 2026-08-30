@@ -10,6 +10,7 @@ import type {
   DoraMetrics,
   UserProfile,
   PlatformIntegrationConfig,
+  IntegrationConnectPayload,
   PlatformSyncResult,
 } from '../types';
 
@@ -21,6 +22,15 @@ const api = axios.create({
 
 // ─── Request interceptor for logging ─────────────────────────────
 api.interceptors.request.use((config) => {
+  try {
+    const saved = sessionStorage.getItem('sre_user');
+    const token = saved ? JSON.parse(saved)?.token : undefined;
+    if (typeof token === 'string' && token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch {
+    sessionStorage.removeItem('sre_user');
+  }
   console.debug(`[API] ${config.method?.toUpperCase()} ${config.url}`);
   return config;
 });
@@ -52,6 +62,9 @@ export const incidentApi = {
   triggerTriage: (id: string) =>
     api.post<TriageResult>(`/incidents/${id}/triage`).then((r) => r.data),
 
+  getLatestAnalysis: (id: string) =>
+    api.get<TriageResult>(`/incidents/${id}/analysis`).then((r) => r.data),
+
   generateRemediation: (id: string) =>
     api.post<RemediationResult>(`/incidents/${id}/remediate`).then((r) => r.data),
 
@@ -82,11 +95,11 @@ export const pipelineApi = {
 
 // ─── Auth API ─────────────────────────────────────────────────────
 export const authApi = {
-  login: (username: string, role: string) =>
-    api.post<UserProfile>('/auth/login', { username, role }).then((r) => r.data),
+  login: (username: string, password: string) =>
+    api.post<UserProfile>('/auth/login', { username, password }).then((r) => r.data),
 
-  getMe: (userId: string) =>
-    api.get<UserProfile>('/auth/me', { params: { userId } }).then((r) => r.data),
+  getMe: () =>
+    api.get<UserProfile>('/auth/me').then((r) => r.data),
 };
 
 // ─── Platform Integrations API ────────────────────────────────────
@@ -96,6 +109,9 @@ export const integrationApi = {
 
   saveConfig: (payload: Partial<PlatformIntegrationConfig>) =>
     api.post<PlatformIntegrationConfig>('/integrations/config', payload).then((r) => r.data),
+
+  connect: (payload: IntegrationConnectPayload) =>
+    api.post<PlatformIntegrationConfig>('/integrations/connect', payload).then((r) => r.data),
 
   syncPlatforms: (userId: string) =>
     api.post<PlatformSyncResult>('/integrations/sync', null, { params: { userId } }).then((r) => r.data),

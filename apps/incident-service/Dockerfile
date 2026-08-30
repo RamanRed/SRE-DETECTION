@@ -1,33 +1,34 @@
-# ─── Stage 1: Build ────────────────────────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-17 AS builder
+# syntax=docker/dockerfile:1.7
 
-WORKDIR /workspace
+FROM golang:1.25-alpine AS builder
 
-# Copy proto contract first
-COPY proto/ /workspace/proto/
+WORKDIR /src
 
-# Copy service source
-COPY apps/incident-service/pom.xml ./apps/incident-service/
-COPY apps/incident-service/src    ./apps/incident-service/src
+# Cache modules separately from source code.
+COPY go.mod go.sum ./
+RUN go mod download
 
-WORKDIR /workspace/apps/incident-service
+COPY . .
+RUN CGO_ENABLED=0 go build \
+      -trimpath \
+      -ldflags="-s -w" \
+      -o /out/incident-service \
+      ./apps/incident-service/cmd/incident-service
 
-RUN mvn dependency:go-offline -q
-RUN mvn clean package -DskipTests -q
+FROM alpine:3.21 AS runtime
 
-# ─── Stage 2: Runtime ──────────────────────────────────────────────────────
-FROM eclipse-temurin:17-jre-alpine AS runtime
-
-RUN addgroup -S sre && adduser -S sreuser -G sre
-USER sreuser
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S -g 10001 sre \
+    && adduser -S -D -H -u 10001 -G sre sreuser
 
 WORKDIR /app
+COPY --from=builder /out/incident-service /app/incident-service
 
-COPY --from=builder /workspace/apps/incident-service/target/*.jar app.jar
+USER 10001:10001
 
-# Expose REST API port and management port
 EXPOSE 8081
 
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8081/actuator/health/readiness >/dev/null || exit 1
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["/app/incident-service"]

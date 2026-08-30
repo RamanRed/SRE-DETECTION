@@ -1,32 +1,38 @@
-# React + TypeScript + Vite
+# SRE Copilot frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + TypeScript + Vite dashboard for incidents, remediation approval,
+CI/CD telemetry, DORA metrics, and platform integration settings.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Start the Go backends first, then:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm ci
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Vite listens on port 3000 and proxies `/api` to the incident service on
+`http://localhost:8081`. The production Nginx image serves the SPA on port 80
+and proxies the same paths to the Compose/Kubernetes DNS name
+`incident-service:8081`.
+
+## Checks
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+The frontend expects the compatibility contract documented in the root
+`README.md`, including camelCase JSON, Spring-style pagination fields, and a
+top-level `message` in error responses. That wire contract is intentionally
+unchanged by the Go backend migration.
+
+Local Compose uses explicit demo mode. The Kubernetes deployment uses a
+bootstrap password, expiring signed sessions, server-side roles, and separately
+authenticated CI webhooks. Integration tokens are write-only in the UI and
+encrypted by the incident service. Keep the HTTP dashboard on a trusted network
+and add TLS plus federated organizational identity before public multi-user
+deployment.

@@ -12,7 +12,7 @@
 
 Provide a 2–3 sentence description of the incident, its user impact, and how it was resolved.
 
-> *Example: On 2026-08-28 at 14:32 UTC, the incident-service experienced a complete HikariCP connection pool exhaustion, making all write endpoints return HTTP 503 for 47 minutes. The AI Copilot diagnosed a runaway batch query as the root cause. A kubectl rollout restart cleared the connection leak and restored service.*
+> *Example: On 2026-08-28 at 14:32 UTC, incident-service exhausted its pgx connection pool, making write endpoints return HTTP 503 for 47 minutes. The AI Copilot diagnosed a runaway query as the root cause. A controlled rollout restored service while follow-up work corrected pool and query limits.*
 
 ---
 
@@ -20,13 +20,13 @@ Provide a 2–3 sentence description of the incident, its user impact, and how i
 
 | Time (UTC) | Event |
 |:-----------|:------|
-| HH:MM      | Prometheus alert `DatabaseConnectionPoolExhausted` fired |
+| HH:MM      | Prometheus alert `DatabaseConnectionPoolExhausted` fired from `db_pool_waiting_requests` |
 | HH:MM      | SRE on-call notified via PagerDuty |
 | HH:MM      | SRE opened AI Copilot dashboard, submitted incident for AI triage |
-| HH:MM      | AI Copilot identified root cause: HikariCP exhaustion |
+| HH:MM      | AI Copilot identified root cause: pgx pool saturation |
 | HH:MM      | Remediation script (`KUBECTL_ROLLBACK`) generated and reviewed |
 | HH:MM      | SRE approved remediation; `kubectl rollout restart` executed |
-| HH:MM      | HikariCP connections restored, service health check passing |
+| HH:MM      | PostgreSQL connections restored, readiness passing |
 | HH:MM      | RESOLVED — all Prometheus alerts cleared, SLO burn rate normal |
 
 ---
@@ -39,14 +39,14 @@ Provide a 2–3 sentence description of the incident, its user impact, and how i
 ### Contributing Factors
 - **Factor 1:** _e.g. Missing connection timeout on long-running queries_
 - **Factor 2:** _e.g. No circuit breaker on the batch processing loop_
-- **Factor 3:** _e.g. HikariCP `connectionTimeout` was set too high_
+- **Factor 3:** _e.g. `DB_CONNECT_TIMEOUT` was too high for the request budget_
 
 ### AI Copilot Diagnosis
 ```
 [Paste the AI-generated root cause response from the Copilot here]
 Confidence Score: 0.96
 Severity: CRITICAL
-Affected Components: [incident-service, PostgreSQL Connection Pool]
+Affected Components: [incident-service, pgx pool, PostgreSQL]
 ```
 
 ---
@@ -69,8 +69,8 @@ Affected Components: [incident-service, PostgreSQL Connection Pool]
 ### Immediate Fix
 ```bash
 # Paste the executed remediation script here
-kubectl rollout restart deployment/incident-service -n default
-kubectl rollout status deployment/incident-service -n default --timeout=60s
+kubectl rollout restart deployment/incident-service -n sre-copilot
+kubectl rollout status deployment/incident-service -n sre-copilot --timeout=60s
 ```
 
 ### Approved By
@@ -83,9 +83,9 @@ kubectl rollout status deployment/incident-service -n default --timeout=60s
 
 | # | Action Item | Owner | Due Date | Status |
 |:--|:-----------|:------|:---------|:-------|
-| 1 | Set `spring.datasource.hikari.connection-timeout=10000` to fail fast | Backend Team | YYYY-MM-DD | ☐ Open |
-| 2 | Add circuit breaker (Resilience4j) on DB-heavy batch endpoints | Backend Team | YYYY-MM-DD | ☐ Open |
-| 3 | Create Grafana alert for HikariCP `pending_threads > 2` | SRE Team | YYYY-MM-DD | ☐ Open |
+| 1 | Set and test `DB_CONNECT_TIMEOUT` against the API request budget | Backend Team | YYYY-MM-DD | ☐ Open |
+| 2 | Add bounded concurrency/load shedding on DB-heavy endpoints | Backend Team | YYYY-MM-DD | ☐ Open |
+| 3 | Tune the `db_pool_waiting_requests` alert threshold from load data | SRE Team | YYYY-MM-DD | ☐ Open |
 | 4 | Add runbook link to Prometheus alert annotations | SRE Team | YYYY-MM-DD | ☐ Open |
 | 5 | Integrate Gitleaks pre-commit hook for all engineers | DevSecOps | YYYY-MM-DD | ☐ Open |
 
@@ -94,8 +94,8 @@ kubectl rollout status deployment/incident-service -n default --timeout=60s
 ## 7. Lessons Learned
 
 ### What Went Well
-- AI Copilot correctly identified the HikariCP exhaustion root cause in < 10s
-- Automated remediation script reduced MTTR significantly
+- AI Copilot correctly identified the database pool saturation signal
+- Generated remediation script and approval workflow reduced operator diagnosis time
 - Prometheus alert fired within 2 minutes of threshold breach
 
 ### What Could Improve
@@ -121,7 +121,7 @@ kubectl rollout status deployment/incident-service -n default --timeout=60s
 | **Latency** | P95 incident API | _Xms → Xms_ |
 | **Traffic** | Requests/s at incident peak | _N req/s_ |
 | **Errors** | 5xx rate at peak | _X.X%_ |
-| **Saturation** | HikariCP pending threads | _X threads_ |
+| **Saturation** | `db_pool_waiting_requests` | _N requests_ |
 
 ---
 

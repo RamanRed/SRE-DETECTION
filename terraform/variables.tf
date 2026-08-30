@@ -39,13 +39,13 @@ variable "private_subnet_b_cidr" {
 }
 
 variable "ec2_instance_type" {
-  description = "EC2 instance type (t3.small = 2GB RAM needed for K3s + Jenkins + Spring Boot apps)"
+  description = "EC2 instance type (t3.small provides additional K3s and rollout headroom)"
   type        = string
   default     = "t3.small"
 }
 
 variable "rds_instance_class" {
-  description = "RDS instance class (Free Tier: db.t3.micro)"
+  description = "RDS instance class (cost-conscious default: db.t3.micro)"
   type        = string
   default     = "db.t3.micro"
 }
@@ -63,9 +63,39 @@ variable "db_password" {
 }
 
 variable "allowed_cidr" {
-  description = "Your IP CIDR for SSH and admin access (e.g. 1.2.3.4/32)"
+  description = "Trusted administrator IPv4 CIDR for SSH, K3s API, Prometheus, and Grafana (for example 1.2.3.4/32)"
   type        = string
-  default     = "0.0.0.0/0"
+
+  validation {
+    condition = (
+      can(cidrnetmask(var.allowed_cidr)) &&
+      var.allowed_cidr != "0.0.0.0/0" &&
+      var.allowed_cidr != "::/0"
+    )
+    error_message = "allowed_cidr must be a valid, non-global administrator IPv4 CIDR; 0.0.0.0/0 is forbidden."
+  }
+}
+
+variable "public_ingress_cidrs" {
+  description = "Trusted client IPv4 CIDRs permitted to reach Traefik on ports 80 and 443; keep this private until TLS and federated identity are configured"
+  type        = list(string)
+
+  validation {
+    condition = (
+      length(var.public_ingress_cidrs) > 0 &&
+      alltrue([
+        for cidr in var.public_ingress_cidrs :
+        can(cidrnetmask(cidr)) && cidr != "0.0.0.0/0" && cidr != "::/0"
+      ])
+    )
+    error_message = "public_ingress_cidrs must contain valid, non-global IPv4 CIDRs; global Internet exposure is blocked for the internal bootstrap-auth deployment."
+  }
+}
+
+variable "enable_observability_ingress" {
+  description = "Open the optional Prometheus/Grafana administration ports 3000-3001 to allowed_cidr"
+  type        = bool
+  default     = false
 }
 
 variable "common_tags" {
@@ -74,7 +104,7 @@ variable "common_tags" {
   default = {
     Project     = "sre-copilot"
     ManagedBy   = "terraform"
-    Environment = "production"
+    Environment = "demo"
     Unit        = "DevOps-Training"
   }
 }

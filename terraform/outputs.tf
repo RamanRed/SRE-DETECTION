@@ -33,6 +33,6 @@ output "ssh_command" {
 }
 
 output "dashboard_url" {
-  description = "SRE Copilot Dashboard URL after deployment"
+  description = "Internal/demo HTTP dashboard URL; configure TLS and real authentication before public exposure"
   value       = "http://${aws_eip.sre_eip.public_ip}"
 }

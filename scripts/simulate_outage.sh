@@ -1,100 +1,114 @@
-#!/bin/bash
-# ─────────────────────────────────────────────────────────────────────────────
-# SRE Incident Simulation: Database Connection Pool Exhaustion Fault Injection
-# ─────────────────────────────────────────────────────────────────────────────
-# Usage: ./scripts/simulate_outage.sh [docker|kubernetes]
-#
-# This script:
-# 1. Injects a fault (DB container pause / scale-to-0)
-# 2. Creates test incidents to fire Prometheus alerts
-# 3. Waits for AI Copilot to triage the incident
-# 4. Automatically restores the DB
-# ─────────────────────────────────────────────────────────────────────────────
+#!/usr/bin/env bash
+# SRE incident simulation: PostgreSQL unavailability and pgx pool pressure.
+# Usage:
+#   ./scripts/simulate_outage.sh docker
+#   INCIDENT_SERVICE_URL=http://your-ingress ./scripts/simulate_outage.sh kubernetes
 
-set -e
+set -Eeuo pipefail
 
 MODE="${1:-docker}"
-INCIDENT_SERVICE_URL="${INCIDENT_SERVICE_URL:-http://localhost:8081}"
+FAULT_DURATION_SECONDS="${FAULT_DURATION_SECONDS:-30}"
+if [[ -n "${INCIDENT_SERVICE_URL:-}" ]]; then
+  SERVICE_URL="${INCIDENT_SERVICE_URL%/}"
+elif [[ "$MODE" == "kubernetes" ]]; then
+  SERVICE_URL="http://localhost"
+else
+  SERVICE_URL="http://localhost:8081"
+fi
+API_URL="${SERVICE_URL}/api/v1"
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+FAULT_ACTIVE=false
 
 log_info()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_ok()    { echo -e "${GREEN}[OK]${NC}    $1"; }
 
-echo ""
-echo -e "${RED}╔══════════════════════════════════════════════════════════════╗"
-echo -e "║  SRE CHAOS ENGINE — Database Outage Simulation               ║"
-echo -e "╚══════════════════════════════════════════════════════════════╝${NC}"
-echo ""
+restore_database() {
+  if [[ "$FAULT_ACTIVE" != true ]]; then
+    return
+  fi
+  log_info "Restoring PostgreSQL..."
+  if [[ "$MODE" == "kubernetes" ]]; then
+    kubectl scale deployment sre-postgres --replicas=1 -n sre-copilot
+    kubectl rollout status deployment/sre-postgres -n sre-copilot --timeout=120s
+  else
+    docker unpause sre-postgres >/dev/null 2>&1 || true
+  fi
+  FAULT_ACTIVE=false
+  log_ok "PostgreSQL restored"
+}
 
-# ── Step 1: Create a sentinel incident (pre-fault) ────────────────────────────
-log_info "Creating pre-fault baseline incident..."
+on_exit() {
+  status=$?
+  trap - EXIT INT TERM
+  restore_database || true
+  if (( status != 0 )); then
+    log_error "Simulation stopped with exit code ${status}; the cleanup handler attempted database recovery."
+  fi
+  exit "$status"
+}
+trap on_exit EXIT INT TERM
+
+case "$MODE" in
+  docker|kubernetes) ;;
+  *) log_error "Mode must be 'docker' or 'kubernetes'"; exit 2 ;;
+esac
+
+echo -e "${RED}SRE CHAOS ENGINE — PostgreSQL outage simulation${NC}"
+log_info "Using incident API at ${API_URL}"
+
 INCIDENT_PAYLOAD='{
-  "title": "SIMULATED: PostgreSQL Connection Pool Exhaustion",
+  "title": "SIMULATED: PostgreSQL connection pool pressure",
   "serviceName": "incident-service",
-  "rawLogs": "HikariPool-1 - Connection is not available, request timed out after 30000ms\norg.springframework.dao.DataAccessResourceFailureException: Unable to acquire JDBC Connection\nCaused by: java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available\n\tat com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:213)",
+  "rawLogs": "level=ERROR msg=\"database query failed\" error=\"pgxpool: context deadline exceeded while acquiring connection\"\nlevel=ERROR msg=\"request failed\" status=503 component=postgresql",
   "firingRule": "DatabaseConnectionPoolExhausted",
-  "environment": "production",
+  "environment": "staging",
   "createdBy": "chaos-engine"
 }'
 
-INCIDENT_RESPONSE=$(curl -s -X POST "${INCIDENT_SERVICE_URL}/api/v1/incidents" \
+log_info "Creating a sentinel incident before fault injection..."
+INCIDENT_RESPONSE=$(curl --fail-with-body --silent --show-error \
+  --connect-timeout 5 --max-time 15 \
+  -X POST "${API_URL}/incidents" \
   -H 'Content-Type: application/json' \
-  -d "${INCIDENT_PAYLOAD}" 2>/dev/null || echo '{"error":"service_unavailable"}')
-
-INCIDENT_ID=$(echo "$INCIDENT_RESPONSE" | grep -o '"id":"[^"]*"' | cut -d'"' -f4 | head -1)
+  -d "$INCIDENT_PAYLOAD")
+INCIDENT_ID=$(printf '%s' "$INCIDENT_RESPONSE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 log_ok "Incident created: ${INCIDENT_ID}"
 
-# ── Step 2: Inject fault ──────────────────────────────────────────────────────
-echo ""
-log_warn "INJECTING FAULT: Pausing PostgreSQL container for 60s..."
-
+log_warn "Injecting PostgreSQL outage for ${FAULT_DURATION_SECONDS}s..."
 if [[ "$MODE" == "kubernetes" ]]; then
   kubectl scale deployment sre-postgres --replicas=0 -n sre-copilot
-  log_warn "K8s: Scaled postgres to 0 replicas"
 else
-  docker pause sre-postgres 2>/dev/null || log_warn "Docker: postgres container already stopped or not found"
+  docker pause sre-postgres >/dev/null
 fi
+FAULT_ACTIVE=true
 
-log_warn "💥 FAULT INJECTED — Prometheus should fire 'DatabaseConnectionPoolExhausted' alert within 60s"
-echo ""
+# Saturate the default 10-connection pgx pool and leave enough callers queued
+# to make db_pool_waiting_requests observable after PostgreSQL recovers.
+REQUEST_TIMEOUT_SECONDS=$((FAULT_DURATION_SECONDS + 30))
+for _ in $(seq 1 32); do
+  curl --silent --max-time "$REQUEST_TIMEOUT_SECONDS" \
+    "${API_URL}/incidents/stats/dashboard" >/dev/null 2>&1 &
+done
+log_warn "Fault active; Prometheus should evaluate DatabaseConnectionPoolExhausted."
+sleep "$FAULT_DURATION_SECONDS"
 
-# ── Step 3: Trigger AI triage on the incident ──────────────────────────────────
-if [[ -n "$INCIDENT_ID" ]]; then
-  log_info "Triggering AI triage for incident: ${INCIDENT_ID}..."
-  sleep 5
-  TRIAGE_RESPONSE=$(curl -s -X POST "${INCIDENT_SERVICE_URL}/api/v1/incidents/${INCIDENT_ID}/triage" \
-    -H 'Content-Type: application/json' 2>/dev/null || echo '{"error":"timeout"}')
-  log_ok "AI Triage response:"
-  echo "${TRIAGE_RESPONSE}" | python3 -m json.tool 2>/dev/null || echo "${TRIAGE_RESPONSE}"
+restore_database
+wait || true
+sleep 5
 
-  # Generate remediation script
-  log_info "Generating remediation script..."
-  REMEDIATION=$(curl -s -X POST "${INCIDENT_SERVICE_URL}/api/v1/incidents/${INCIDENT_ID}/remediate" \
-    -H 'Content-Type: application/json' 2>/dev/null || echo '{}')
-  log_ok "Remediation script generated:"
-  echo "${REMEDIATION}" | python3 -m json.tool 2>/dev/null || echo "${REMEDIATION}"
-fi
+log_info "Triggering AI triage after database recovery..."
+TRIAGE_RESPONSE=$(curl --fail-with-body --silent --show-error --max-time 35 \
+  -X POST "${API_URL}/incidents/${INCIDENT_ID}/triage" \
+  -H 'Content-Type: application/json')
+printf '%s\n' "$TRIAGE_RESPONSE" | python3 -m json.tool
 
-# ── Step 4: Wait and restore ──────────────────────────────────────────────────
-log_warn "Waiting 60s before restoring database..."
-sleep 60
+log_info "Generating a remediation script..."
+REMEDIATION_RESPONSE=$(curl --fail-with-body --silent --show-error --max-time 35 \
+  -X POST "${API_URL}/incidents/${INCIDENT_ID}/remediate" \
+  -H 'Content-Type: application/json')
+printf '%s\n' "$REMEDIATION_RESPONSE" | python3 -m json.tool
 
-log_info "RESTORING: Unpausing PostgreSQL..."
-if [[ "$MODE" == "kubernetes" ]]; then
-  kubectl scale deployment sre-postgres --replicas=1 -n sre-copilot
-  log_ok "K8s: Postgres scaled back to 1 replica"
-else
-  docker unpause sre-postgres 2>/dev/null || log_ok "Docker: postgres resumed"
-fi
-
-log_ok "Database restored. HikariCP should reconnect within 30s."
-echo ""
-echo -e "${GREEN}═══════════════════════════════════════════════════════════════"
-echo -e "  SIMULATION COMPLETE"
-echo -e "  Incident ID: ${INCIDENT_ID}"
-echo -e "  → Now review the incident in the SRE Copilot Dashboard"
-echo -e "  → Check Grafana for SLO burn rate alert resolution"
-echo -e "  → Approve the remediation script in the UI"
-echo -e "═══════════════════════════════════════════════════════════════${NC}"
+log_ok "Simulation complete. Review incident ${INCIDENT_ID} in the dashboard and approve the generated remediation manually."

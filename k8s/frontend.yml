@@ -37,6 +37,12 @@ spec:
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
 ---
 apiVersion: v1
 kind: Service
@@ -54,16 +60,15 @@ spec:
       targetPort: 80
   type: ClusterIP
 ---
-# Ingress: K3s Traefik / Nginx Ingress Controller
+# Internal/demo ingress. K3s installs Traefik by default; add TLS and real
+# authentication before allowing untrusted clients to reach this endpoint.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: sre-copilot-ingress
   namespace: sre-copilot
-  annotations:
-    kubernetes.io/ingress.class: "traefik"
-    # For Nginx: kubernetes.io/ingress.class: "nginx"
 spec:
+  ingressClassName: traefik
   rules:
     - http:
         paths:

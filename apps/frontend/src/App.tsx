@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import './index.css';
-import { incidentApi, integrationApi } from './api/incidentApi';
-import type { Incident, DashboardStats, UserProfile, PlatformIntegrationConfig } from './types';
+import { authApi, incidentApi, integrationApi } from './api/incidentApi';
+import type {
+  Incident, DashboardStats, UserProfile, PlatformIntegrationConfig, IntegrationStatus,
+} from './types';
 import IncidentCard from './components/IncidentCard';
 import IncidentDetailModal from './components/IncidentDetailModal';
 import CreateIncidentModal from './components/CreateIncidentModal';
@@ -29,30 +31,21 @@ export default function App() {
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem('sre_user');
-      return saved ? JSON.parse(saved) : {
-        authenticated: true,
-        token: 'sre-session-active',
-        userId: 'ramanred',
-        username: 'RamanRed',
-        email: 'ramanred@devops.sre.io',
-        role: 'SRE_LEAD',
-        avatarUrl: 'https://github.com/RamanRed.png'
-      };
+      const saved = sessionStorage.getItem('sre_user');
+      return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
     }
   });
 
   const [integrationConfig, setIntegrationConfig] = useState<PlatformIntegrationConfig>({
-    userId: 'ramanred',
-    username: 'RamanRed',
-    githubRepo: 'RamanRed/SRE-DETECTION',
-    githubBranch: 'master',
-    githubStatus: 'CONNECTED',
-    jenkinsUrl: 'http://16.16.175.206:8080',
-    jenkinsJobName: 're-copilot-pipeline',
-    jenkinsStatus: 'CONNECTED',
+    userId: 'local-sre',
+    repositoryProvider: 'GITHUB',
+    targetBranch: 'main',
+    pollingCadence: '15_MINUTES',
+    autoRebuild: true,
+    autoAITriage: true,
+    status: 'DISCONNECTED',
   });
 
   const [loading, setLoading] = useState(false);
@@ -60,9 +53,22 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [online, setOnline] = useState(true);
 
+  useEffect(() => {
+    if (!user?.token) return;
+    let cancelled = false;
+    authApi.getMe().catch(() => {
+      if (!cancelled) {
+        sessionStorage.removeItem('sre_user');
+        setUser(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [user?.token]);
+
   const loadIntegrations = useCallback(async () => {
+    if (!user) return;
     try {
-      const data = await integrationApi.getConfig(user?.userId || 'ramanred');
+      const data = await integrationApi.getConfig(user.userId);
       if (data) setIntegrationConfig(data);
     } catch (err) {
       console.warn('Could not load integrations', err);
@@ -112,18 +118,19 @@ export default function App() {
       loadIncidents();
       loadStats();
     }
-  }, [viewMode, loadIncidents, loadStats]);
+  }, [viewMode, loadIncidents, loadStats, user?.token]);
 
   // Auto-refresh every 30s
   useEffect(() => {
     const timer = setInterval(() => {
+      loadIntegrations();
       if (viewMode === 'incidents') {
         loadIncidents();
         loadStats();
       }
     }, 30_000);
     return () => clearInterval(timer);
-  }, [viewMode, loadIncidents, loadStats]);
+  }, [viewMode, loadIncidents, loadStats, loadIntegrations]);
 
   const filteredIncidents = incidents.filter((inc) => {
     if (!searchQuery) return true;
@@ -140,6 +147,21 @@ export default function App() {
     { key: 'all',      label: 'All',      icon: <LayoutDashboard size={14}/> },
     { key: 'resolved', label: 'Resolved', icon: <CheckCircle size={14}/> },
   ];
+
+  const integrationStatus: IntegrationStatus = integrationConfig.status
+    || (integrationConfig.githubStatus === 'ERROR' || integrationConfig.jenkinsStatus === 'ERROR'
+      ? 'ERROR'
+      : integrationConfig.githubStatus === 'CONNECTED' && integrationConfig.jenkinsStatus === 'CONNECTED'
+        ? 'CONNECTED'
+        : 'DISCONNECTED');
+  const integrationColor = integrationStatus === 'CONNECTED'
+    ? '#34d399'
+    : integrationStatus === 'SYNCING'
+      ? '#fbbf24'
+      : integrationStatus === 'ERROR' ? '#f87171' : '#94a3b8';
+  const repositoryLabel = integrationConfig.repositoryUrl
+    ? integrationConfig.repositoryUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')
+    : integrationConfig.githubRepo || 'Connect integrations';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -213,13 +235,24 @@ export default function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* Platform Integration status badge */}
           <button
-            onClick={() => setShowIntegrationModal(true)}
+            onClick={() => user ? setShowIntegrationModal(true) : setShowAuthModal(true)}
             className="btn btn-ghost"
-            title="Configure GitHub PAT and Jenkins API credentials"
+            title="Configure repository, CI/CD, and autonomous polling"
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', fontSize: 12 }}
           >
-            <Key size={13} color="#60a5fa" />
-            <span>{integrationConfig.githubRepo || 'RamanRed/SRE-DETECTION'}</span>
+            <Key size={13} color={integrationColor} />
+            <span>{repositoryLabel}</span>
+            <span style={{
+              color: integrationColor,
+              background: integrationColor + '18',
+              borderRadius: 999,
+              padding: '1px 6px',
+              fontSize: 9,
+              fontWeight: 750,
+              letterSpacing: '.04em',
+            }}>
+              {integrationStatus}
+            </span>
             <Settings size={13} style={{ marginLeft: 2 }} />
           </button>
 
@@ -278,7 +311,7 @@ export default function App() {
         {viewMode === 'pipelines' ? (
           <PipelineHub
             integrationConfig={integrationConfig}
-            onOpenIntegrationSettings={() => setShowIntegrationModal(true)}
+            onOpenIntegrationSettings={() => user ? setShowIntegrationModal(true) : setShowAuthModal(true)}
           />
         ) : (
           <>
@@ -387,7 +420,10 @@ export default function App() {
       {/* Modals */}
       {selectedIncident && (
         <IncidentDetailModal
+          key={selectedIncident.id}
           incident={selectedIncident}
+          appliedBy={user?.username || user?.userId || ''}
+          userRole={user?.role}
           onClose={() => setSelectedIncident(null)}
           onResolved={() => {
             setSelectedIncident(null);
@@ -424,7 +460,6 @@ export default function App() {
           onClose={() => setShowIntegrationModal(false)}
           onSaved={(savedConfig) => {
             setIntegrationConfig(savedConfig);
-            setShowIntegrationModal(false);
           }}
         />
       )}

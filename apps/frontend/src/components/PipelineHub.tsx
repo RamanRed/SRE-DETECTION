@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { pipelineApi } from '../api/incidentApi';
+import { integrationApi, pipelineApi } from '../api/incidentApi';
 import type { DoraMetrics, PipelineBuild, PlatformIntegrationConfig } from '../types';
 import {
   GitCommit, CheckCircle2, XCircle,
@@ -13,6 +13,75 @@ interface Props {
   onOpenIntegrationSettings?: () => void;
 }
 
+function safeHTTPURL(raw: string | undefined): string {
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? parsed.toString().replace(/\/$/, '')
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function repositoryLink(
+  base: string,
+  provider: PlatformIntegrationConfig['repositoryProvider'],
+  kind: 'commit' | 'branch',
+  value: string,
+): string {
+  if (!base) return '#';
+  const encoded = encodeURIComponent(value);
+  if (provider === 'GITLAB') return `${base}/-/${kind === 'commit' ? 'commit' : 'tree'}/${encoded}`;
+  if (provider === 'BITBUCKET') return `${base}/${kind === 'commit' ? 'commits' : 'src'}/${encoded}`;
+  return `${base}/${kind === 'commit' ? 'commit' : 'tree'}/${encoded}`;
+}
+
+function BuildStatusBadge({ status }: { status: PipelineBuild['status'] }) {
+  if (status === 'SUCCESS') {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', borderRadius: 12, background: 'rgba(16,185,129,0.12)', color: '#34d399', fontSize: 11, fontWeight: 600 }}>
+        <CheckCircle2 size={13} /> SUCCESS
+      </span>
+    );
+  }
+  if (status === 'RUNNING' || status === 'QUEUED') {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', borderRadius: 12, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontSize: 11, fontWeight: 600 }}>
+        <RefreshCw size={13} /> {status}
+      </span>
+    );
+  }
+  if (status === 'UNSTABLE') {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', borderRadius: 12, background: 'rgba(245,158,11,0.12)', color: '#fbbf24', fontSize: 11, fontWeight: 600 }}>
+        <ShieldAlert size={13} /> UNSTABLE
+      </span>
+    );
+  }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', borderRadius: 12, background: 'rgba(239,68,68,0.12)', color: '#f87171', fontSize: 11, fontWeight: 600 }}>
+      <XCircle size={13} /> {status}
+    </span>
+  );
+}
+
+function DoraStatusBadge({ live }: { live: boolean }) {
+  return (
+    <span style={{
+      fontSize: 10,
+      fontWeight: 700,
+      padding: '2px 8px',
+      borderRadius: 12,
+      background: live ? 'rgba(16, 185, 129, 0.15)' : 'rgba(100, 116, 139, 0.15)',
+      color: live ? '#34d399' : '#94a3b8',
+    }}>
+      {live ? 'LIVE' : 'EMPTY'}
+    </span>
+  );
+}
+
 export default function PipelineHub({ integrationConfig, onOpenIntegrationSettings }: Props) {
   const [metrics, setMetrics] = useState<DoraMetrics | null>(null);
   const [builds, setBuilds] = useState<PipelineBuild[]>([]);
@@ -21,12 +90,35 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
   const [simulating, setSimulating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
 
-  const repoName = integrationConfig?.githubRepo || 'RamanRed/SRE-DETECTION';
-  const defaultBranch = integrationConfig?.githubBranch || 'master';
-  const jenkinsBase = integrationConfig?.jenkinsUrl || 'http://16.16.175.206:8080';
-  const jenkinsJob = integrationConfig?.jenkinsJobName || 're-copilot-pipeline';
-  const githubRepoUrl = `https://github.com/${repoName}`;
+  const provider = integrationConfig?.repositoryProvider || 'GITHUB';
+  const engine = integrationConfig?.pipelineEngine || 'JENKINS';
+  const legacyRepositoryURL = integrationConfig?.githubRepo
+    ? `https://github.com/${integrationConfig.githubRepo}`
+    : '';
+  const repositoryURL = safeHTTPURL(integrationConfig?.repositoryUrl || legacyRepositoryURL);
+  const repoName = repositoryURL
+    ? repositoryURL.replace(/^https?:\/\//, '')
+    : integrationConfig?.githubRepo || 'No repository connected';
+  const defaultBranch = integrationConfig?.targetBranch || integrationConfig?.githubBranch || 'main';
+  const ciBase = safeHTTPURL(integrationConfig?.ciBaseUrl || integrationConfig?.jenkinsUrl);
+  const pipelineJob = integrationConfig?.jobName || integrationConfig?.jenkinsJobName || 'Not configured';
+  const integrationConnected = integrationConfig?.status === 'CONNECTED'
+    || (integrationConfig?.githubStatus === 'CONNECTED' && integrationConfig?.jenkinsStatus === 'CONNECTED');
+  const ciJobURL = engine === 'JENKINS' && ciBase
+    ? `${ciBase}/job/${encodeURIComponent(pipelineJob)}`
+    : ciBase;
+  const metricsHaveData = Boolean(metrics?.dataAvailable);
+  const doraFreshnessSource = metrics?.asOf
+    || metrics?.calculatedAt
+    || metrics?.generatedAt
+    || metrics?.recentBuilds?.[0]?.updatedAt
+    || metrics?.recentBuilds?.[0]?.createdAt;
+  const doraFreshnessDate = doraFreshnessSource ? new Date(doraFreshnessSource) : null;
+  const doraFreshness = doraFreshnessDate && !Number.isNaN(doraFreshnessDate.getTime())
+    ? doraFreshnessDate.toLocaleString()
+    : null;
 
   const fetchPipelineData = async () => {
     try {
@@ -47,17 +139,16 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await pipelineApi.triggerSync();
-      if (res.doraMetrics) {
-        setMetrics(res.doraMetrics);
-        if (res.doraMetrics.recentBuilds) {
-          setBuilds(res.doraMetrics.recentBuilds);
-        }
-      }
-      setSuccessMsg(`Telemetry synchronized from GitHub (${repoName}) and Jenkins CI!`);
+      if (!integrationConfig?.userId) throw new Error('Connect a repository and CI engine first.');
+      const result = await integrationApi.syncPlatforms(integrationConfig.userId);
+      await fetchPipelineData();
+      setMessageIsError(!result.success);
+      setSuccessMsg(result.message || `Polling cycle completed for ${repoName}.`);
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err) {
-      console.error('Sync failed', err);
+      setMessageIsError(true);
+      setSuccessMsg((err as Error).message || 'Polling failed.');
+      setTimeout(() => setSuccessMsg(null), 4000);
     } finally {
       setSyncing(false);
     }
@@ -69,9 +160,9 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
       const newBuildNumber = (builds[0]?.buildNumber ?? 30) + 1;
       const commitSha = '2e81b09';
       await pipelineApi.sendWebhook({
-        pipelineName: jenkinsJob,
+        pipelineName: pipelineJob,
         buildNumber: newBuildNumber,
-        ciTool: 'JENKINS',
+        ciTool: engine,
         status: 'SUCCESS',
         gitCommit: commitSha,
         gitBranch: defaultBranch,
@@ -82,15 +173,17 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
         testsFailed: 0,
         vulnerabilitiesDetected: 0,
         environment: 'production',
-        buildUrl: `${jenkinsBase}/job/${jenkinsJob}/${newBuildNumber}/`,
+        buildUrl: ciJobURL ? `${ciJobURL}/${newBuildNumber}/` : undefined,
         logSnippet: `Jenkins Pipeline Build #${newBuildNumber} execution:
-[Stage 1] Checkout from ${githubRepoUrl}/commit/${commitSha} SUCCESS
-[Stage 2] Maven package: 45 unit tests passed. 0 failures.
-[Stage 3] SonarCloud Quality Gate: 0 Vulnerabilities, 0 Security Hotspots.
-[Stage 4] Docker Build & Trivy Scan: 0 CRITICAL CVEs.
-[Stage 5] Rolling Deployment to AWS EC2 K3s Cluster SUCCESS.`,
+[Stage 1] Checkout from ${repositoryLink(repositoryURL, provider, 'commit', commitSha)} SUCCESS
+[Stage 2] Go format, vet, race tests, and static binary build SUCCESS.
+[Stage 3] Frontend lint, typecheck, and production build SUCCESS.
+[Stage 4] SonarCloud analysis uploaded successfully.
+[Stage 5] Container builds and Trivy CRITICAL security gate SUCCESS.
+[Stage 6] Immutable image rollout and in-cluster smoke checks SUCCESS.`,
       });
-      setSuccessMsg(`Live Build #${newBuildNumber} recorded for ${repoName}!`);
+      setMessageIsError(false);
+      setSuccessMsg(`Sample build #${newBuildNumber} recorded for ${repoName}.`);
       setTimeout(() => setSuccessMsg(null), 4000);
       await fetchPipelineData();
     } catch (err) {
@@ -143,7 +236,9 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
               </span>
             </div>
             <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '4px 0 0 0' }}>
-              Connected to GitHub repository & Jenkins CI pipeline with automated telemetry ingestion
+              {integrationConnected
+                ? `${provider} repository and ${engine.replace('_', ' ')} with autonomous polling`
+                : 'Connect a repository and CI/CD engine to enable autonomous polling'}
             </p>
           </div>
         </div>
@@ -153,35 +248,37 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             <button
               onClick={onOpenIntegrationSettings}
               className="btn btn-ghost"
-              title="Configure GitHub PAT and Jenkins Token"
+              title="Configure repository and CI/CD credentials"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 13 }}
             >
               <Settings size={14} />
-              <span>Configure Tokens</span>
+              <span>Configure connections</span>
             </button>
           )}
 
           <button
             onClick={handleSync}
-            disabled={syncing}
+            disabled={syncing || !integrationConnected}
             className="btn btn-ghost"
-            title="Sync live build status with Jenkins CI server and GitHub"
+            title="Poll the connected repository and CI/CD engine now"
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', fontSize: 13 }}
           >
             <RefreshCw size={14} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
-            {syncing ? 'Syncing...' : 'Sync Jenkins'}
+            {syncing ? 'Polling...' : 'Poll now'}
           </button>
 
-          <button
-            onClick={handleSimulateWebhook}
-            disabled={simulating}
-            className="btn btn-primary"
-            title="Trigger a new build event to test automated webhook telemetry ingestion"
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', fontSize: 13 }}
-          >
-            <Play size={14} fill="#fff" />
-            {simulating ? 'Triggering...' : 'Trigger Pipeline Webhook'}
-          </button>
+          {import.meta.env.DEV && (
+            <button
+              onClick={handleSimulateWebhook}
+              disabled={simulating}
+              className="btn btn-primary"
+              title="Record a sample webhook event in local development"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', fontSize: 13 }}
+            >
+              <Play size={14} fill="#fff" />
+              {simulating ? 'Recording...' : 'Record sample build'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -191,19 +288,28 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
           alignItems: 'center',
           gap: 10,
           padding: '12px 16px',
-          background: 'rgba(16, 185, 129, 0.12)',
-          border: '1px solid rgba(16, 185, 129, 0.3)',
-          color: '#34d399',
+          background: messageIsError ? 'rgba(239,68,68,.12)' : 'rgba(16,185,129,.12)',
+          border: messageIsError ? '1px solid rgba(239,68,68,.3)' : '1px solid rgba(16,185,129,.3)',
+          color: messageIsError ? '#f87171' : '#34d399',
           borderRadius: 10,
           fontSize: 13,
           fontWeight: 500,
         }}>
-          <Check size={16} />
+          {messageIsError ? <ShieldAlert size={16} /> : <Check size={16} />}
           <span>{successMsg}</span>
         </div>
       )}
 
       {/* ── DORA Metrics Grid ─────────────────────────────────── */}
+      <div
+        role="status"
+        aria-live="polite"
+        style={{ margin: '-10px 2px -12px', color: 'var(--color-text-muted)', fontSize: 11 }}
+      >
+        {metricsHaveData
+          ? `DORA data: LIVE · ${doraFreshness ? `latest build telemetry ${doraFreshness}` : 'freshness unavailable'}`
+          : 'DORA data: EMPTY · no qualifying pipeline builds in the last 7 days'}
+      </div>
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
@@ -220,12 +326,10 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Deployment Frequency
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
-              ELITE
-            </span>
+            <DoraStatusBadge live={metricsHaveData} />
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 4 }}>
-            {metrics?.deploymentFrequency ?? '3.5 / day'}
+            {metricsHaveData ? metrics?.deploymentFrequency : '—'}
           </div>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>Automated builds deploying to production</p>
         </div>
@@ -241,12 +345,10 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Lead Time For Changes
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
-              ELITE
-            </span>
+            <DoraStatusBadge live={metricsHaveData} />
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 4 }}>
-            {metrics?.leadTimeForChanges ?? '2m 25s'}
+            {metricsHaveData ? metrics?.leadTimeForChanges : '—'}
           </div>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>Commit to production deployment</p>
         </div>
@@ -262,12 +364,10 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Change Failure Rate
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
-              &lt; 15%
-            </span>
+            <DoraStatusBadge live={metricsHaveData} />
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#34d399', marginBottom: 4 }}>
-            {metrics?.changeFailureRate ?? 0.0}%
+            {metricsHaveData ? `${metrics?.changeFailureRate}%` : '—'}
           </div>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>Deployments requiring rollback or hotfix</p>
         </div>
@@ -283,12 +383,10 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Mean Time To Recovery
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
-              AI ACCELERATED
-            </span>
+            <DoraStatusBadge live={metricsHaveData} />
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 4 }}>
-            {metrics?.meanTimeToRecovery ?? '8m 30s'}
+            {metricsHaveData ? metrics?.meanTimeToRecovery : '—'}
           </div>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>From incident detection to resolution</p>
         </div>
@@ -301,11 +399,11 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
         gap: 16,
       }}>
         <a
-          href={`${jenkinsBase}/job/${jenkinsJob}/`}
+          href={ciJobURL || '#'}
           target="_blank"
           rel="noopener noreferrer"
           style={{ textDecoration: 'none' }}
-          title={`Click to open Jenkins Job (${jenkinsJob})`}
+          title={ciJobURL ? `Open ${engine} pipeline (${pipelineJob})` : 'CI/CD connection is not configured'}
         >
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -313,24 +411,24 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             cursor: 'pointer', transition: 'all 0.2s',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }}></div>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: integrationConnected ? '#10b981' : '#64748b' }}></div>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  Jenkins CI Server <ExternalLink size={12} color="var(--color-text-muted)" />
+                  {engine.replace('_', ' ')} <ExternalLink size={12} color="var(--color-text-muted)" />
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Job: {jenkinsJob}</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Pipeline: {pipelineJob}</div>
               </div>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.12)', color: '#34d399' }}>CONNECTED</span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, background: integrationConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100,116,139,.12)', color: integrationConnected ? '#34d399' : '#94a3b8' }}>{integrationConnected ? 'CONNECTED' : 'DISCONNECTED'}</span>
           </div>
         </a>
 
         <a
-          href={`${githubRepoUrl}/actions`}
+          href={repositoryURL || '#'}
           target="_blank"
           rel="noopener noreferrer"
           style={{ textDecoration: 'none' }}
-          title={`Click to open GitHub Actions for ${repoName}`}
+          title={repositoryURL ? `Open ${provider} repository ${repoName}` : 'Repository is not configured'}
         >
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -338,15 +436,15 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             cursor: 'pointer', transition: 'all 0.2s',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }}></div>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: integrationConnected ? '#10b981' : '#64748b' }}></div>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  GitHub Actions <ExternalLink size={12} color="var(--color-text-muted)" />
+                  {provider} Repository <ExternalLink size={12} color="var(--color-text-muted)" />
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{repoName}</div>
               </div>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, background: 'rgba(16, 185, 129, 0.12)', color: '#34d399' }}>ACTIVE</span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, background: integrationConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100,116,139,.12)', color: integrationConnected ? '#34d399' : '#94a3b8' }}>{integrationConnected ? 'ACTIVE' : 'INACTIVE'}</span>
           </div>
         </a>
 
@@ -389,7 +487,7 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>Recent CI/CD Pipeline Executions</h3>
-          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Click any row to inspect build logs & trace sources</span>
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Select a row to inspect build logs & trace sources</span>
         </div>
 
         <div style={{ overflowX: 'auto' }}>
@@ -409,16 +507,27 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             </thead>
             <tbody>
               {builds.map((b) => {
-                const commitLink = `${githubRepoUrl}/commit/${b.gitCommit}`;
-                const branchLink = `${githubRepoUrl}/tree/${b.gitBranch || defaultBranch}`;
-                const jenkinsLink = b.buildUrl ?? `${jenkinsBase}/job/${jenkinsJob}/${b.buildNumber}/`;
+                const commitLink = repositoryLink(repositoryURL, provider, 'commit', b.gitCommit);
+                const branchLink = repositoryLink(repositoryURL, provider, 'branch', b.gitBranch || defaultBranch);
+                const ciLink = safeHTTPURL(b.buildUrl) || (ciJobURL ? `${ciJobURL}/${b.buildNumber}/` : '#');
 
                 return (
                   <tr
                     key={b.id}
                     onClick={() => setSelectedBuild(b)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedBuild(b);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-haspopup="dialog"
+                    aria-label={`Open details for ${b.pipelineName} build ${b.buildNumber}`}
                     style={{ borderBottom: '1px solid var(--color-border)', cursor: 'pointer', transition: 'background 0.15s' }}
-                    className="hover-row"
+                    className="hover-row build-row"
                   >
                     <td style={{ padding: '14px 18px', fontWeight: 700, color: '#fff' }}>
                       <span title={`View Build #${b.buildNumber} details`}>#{b.buildNumber}</span>
@@ -440,15 +549,7 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
                       </span>
                     </td>
                     <td style={{ padding: '14px 18px' }}>
-                      {b.status === 'SUCCESS' ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', borderRadius: 12, background: 'rgba(16,185,129,0.12)', color: '#34d399', fontSize: 11, fontWeight: 600 }}>
-                          <CheckCircle2 size={13} /> SUCCESS
-                        </span>
-                      ) : (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', borderRadius: 12, background: 'rgba(239,68,68,0.12)', color: '#f87171', fontSize: 11, fontWeight: 600 }}>
-                          <XCircle size={13} /> FAILURE
-                        </span>
-                      )}
+                      <BuildStatusBadge status={b.status} />
                     </td>
                     <td style={{ padding: '14px 18px', fontFamily: 'monospace' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -457,7 +558,7 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          title={`Open commit ${b.gitCommit} on GitHub`}
+                          title={`Open commit ${b.gitCommit} on ${provider}`}
                           style={{ color: '#60a5fa', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
                         >
                           <GitCommit size={13} />
@@ -469,7 +570,7 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          title={`Open branch ${b.gitBranch} on GitHub`}
+                          title={`Open branch ${b.gitBranch} on ${provider}`}
                           style={{ color: 'var(--color-text-muted)', fontFamily: 'sans-serif', textDecoration: 'none' }}
                         >
                           ({b.gitBranch})
@@ -496,15 +597,15 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
                     <td style={{ padding: '14px 18px', color: 'var(--color-text-muted)' }}>{b.durationSeconds}s</td>
                     <td style={{ padding: '14px 18px' }}>
                       <a
-                        href={b.ciTool === 'JENKINS' ? jenkinsLink : `${githubRepoUrl}/actions`}
+                        href={ciLink}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
                         className="btn btn-ghost"
-                        title={b.ciTool === 'JENKINS' ? `Open Build #${b.buildNumber} in Jenkins Console` : 'Open in GitHub Actions'}
+                        title={`Open Build #${b.buildNumber} in ${b.ciTool}`}
                         style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
                       >
-                        <span>{b.ciTool === 'JENKINS' ? 'Jenkins ↗' : 'GitHub ↗'}</span>
+                        <span>{b.ciTool.replace('_', ' ')} ↗</span>
                       </a>
                     </td>
                   </tr>
@@ -540,15 +641,7 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
                   <span style={{ padding: '2px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.08)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
                     {selectedBuild.pipelineName}
                   </span>
-                  {selectedBuild.status === 'SUCCESS' ? (
-                    <span style={{ padding: '2px 10px', borderRadius: 12, background: 'rgba(16,185,129,0.15)', color: '#34d399', fontSize: 11, fontWeight: 700 }}>
-                      SUCCESS
-                    </span>
-                  ) : (
-                    <span style={{ padding: '2px 10px', borderRadius: 12, background: 'rgba(239,68,68,0.15)', color: '#f87171', fontSize: 11, fontWeight: 700 }}>
-                      FAILURE
-                    </span>
-                  )}
+                  <BuildStatusBadge status={selectedBuild.status} />
                 </div>
                 <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>
                   Executed by <strong>{selectedBuild.author}</strong> on {new Date(selectedBuild.createdAt).toLocaleString()}
@@ -562,17 +655,17 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
             {/* Quick Link Buttons to Original Sources */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
               <a
-                href={`${githubRepoUrl}/commit/${selectedBuild.gitCommit}`}
+                href={repositoryLink(repositoryURL, provider, 'commit', selectedBuild.gitCommit)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-primary"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '8px 14px', textDecoration: 'none' }}
               >
-                <GitCommit size={14} /> View Commit on GitHub ({selectedBuild.gitCommit}) <ExternalLink size={12} />
+                <GitCommit size={14} /> View Commit on {provider} ({selectedBuild.gitCommit}) <ExternalLink size={12} />
               </a>
 
               <a
-                href={`${githubRepoUrl}/tree/${selectedBuild.gitBranch || defaultBranch}`}
+                href={repositoryLink(repositoryURL, provider, 'branch', selectedBuild.gitBranch || defaultBranch)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-ghost"
@@ -582,7 +675,7 @@ export default function PipelineHub({ integrationConfig, onOpenIntegrationSettin
               </a>
 
               <a
-                href={selectedBuild.buildUrl ?? `${jenkinsBase}/job/${jenkinsJob}/${selectedBuild.buildNumber}/`}
+                href={safeHTTPURL(selectedBuild.buildUrl) || (ciJobURL ? `${ciJobURL}/${selectedBuild.buildNumber}/` : '#')}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-ghost"

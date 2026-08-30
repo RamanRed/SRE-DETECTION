@@ -34,47 +34,70 @@ spec:
               name: management
               protocol: TCP
           env:
-            - name: JAVA_TOOL_OPTIONS
-              value: "-XX:TieredStopAtLevel=1 -Xmx200m -Xms64m"
-            - name: SPRING_AUTOCONFIGURE_EXCLUDE
-              value: "org.springframework.ai.model.ollama.autoconfigure.OllamaChatAutoConfiguration"
-            - name: SPRING_PROFILES_ACTIVE
+            - name: APPLICATION_NAME
+              value: "ai-copilot-service"
+            - name: GRPC_PORT
+              value: "9090"
+            - name: MANAGEMENT_PORT
+              value: "8082"
+            # A missing key intentionally enables deterministic heuristic mode.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sre-ai-secret
+                  key: OPENAI_API_KEY
+                  optional: true
+            - name: OPENAI_BASE_URL
               valueFrom:
                 configMapKeyRef:
                   name: sre-copilot-config
-                  key: SPRING_PROFILES_ACTIVE
-            # Use GROQ's OpenAI-compatible API (secret created by Jenkins via kubectl)
-            - name: SPRING_AI_OPENAI_API_KEY
+                  key: OPENAI_BASE_URL
+            - name: OPENAI_MODEL
               valueFrom:
-                secretKeyRef:
-                  name: sre-groq-secret
-                  key: GROQ_API_KEY
-            - name: SPRING_AI_OPENAI_BASE_URL
-              value: "https://api.groq.com/openai"
-            - name: SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL
-              value: "llama-3.3-70b-versatile"
-            - name: SPRING_AI_OPENAI_CHAT_OPTIONS_TEMPERATURE
+                configMapKeyRef:
+                  name: sre-copilot-config
+                  key: OPENAI_MODEL
+            - name: OPENAI_TEMPERATURE
               value: "0.2"
-            # Ollama not deployed in K8s — Groq is the active AI backend
+            - name: OPENAI_TIMEOUT
+              value: "15s"
+            - name: REMEDIATION_NAMESPACE
+              value: "sre-copilot"
+            - name: GOMEMLIMIT
+              value: "96MiB"
           resources:
             requests:
-              memory: "220Mi"
-              cpu:    "100m"
+              memory: "64Mi"
+              cpu:    "50m"
             limits:
-              memory: "350Mi"
-              cpu:    "400m"
+              memory: "128Mi"
+              cpu:    "300m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: 8082
-            initialDelaySeconds: 30
+            initialDelaySeconds: 2
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: 8082
-            initialDelaySeconds: 60
+            initialDelaySeconds: 5
             periodSeconds: 20
             failureThreshold: 3
 ---

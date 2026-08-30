@@ -2,7 +2,7 @@
 ################################################################################
 # Ansible Playbook: Bootstrap EC2 node with Docker Engine + K3s
 # Usage: ansible-playbook -i inventory.ini playbook.yml
-# Target: Ubuntu 22.04 t3.micro EC2 with 2GB swap (provisioned by Terraform)
+# Target: Ubuntu 22.04 t3.small EC2 with 2GB swap (provisioned by Terraform)
 ################################################################################
 
 - name: Bootstrap SRE Copilot Node
@@ -10,8 +10,7 @@
   become: yes
   gather_facts: yes
   vars:
-    k3s_version: "v1.30.2+k3s1"
-    docker_compose_version: "2.28.1"
+    k3s_version: "v1.36.2+k3s1"
 
   tasks:
 
@@ -36,7 +35,7 @@
           - net-tools
         state: present
 
-    # ── Swap space (critical for t3.micro with Spring Boot + K3s) ──────────
+    # ── Swap space for K3s and transient rollout/build pressure ───────────
     - name: Check if swap file exists
       stat:
         path: /swapfile
@@ -56,15 +55,26 @@
       command: mkswap /swapfile
       when: not swapfile_stat.stat.exists
 
-    - name: Enable swap
-      command: swapon /swapfile
-      when: not swapfile_stat.stat.exists
-
     - name: Persist swap in fstab
       lineinfile:
         path: /etc/fstab
         line: '/swapfile none swap sw 0 0'
         state: present
+
+    - name: Inspect active swap devices
+      command: swapon --show=NAME --noheadings
+      register: active_swap
+      changed_when: false
+
+    - name: Enable swap
+      command: swapon /swapfile
+      when: "'/swapfile' not in active_swap.stdout_lines"
+
+    - name: Verify cgroup v2 memory and swap accounting
+      shell: >
+        test -f /sys/fs/cgroup/memory.swap.max &&
+        grep -qw memory /sys/fs/cgroup/cgroup.controllers
+      changed_when: false
 
     # ── Docker Engine ────────────────────────────────────────────────────────
     - name: Add Docker GPG key
@@ -101,18 +111,29 @@
         append: yes
 
     # ── K3s Lightweight Kubernetes ───────────────────────────────────────────
-    - name: Check if K3s is already installed
-      stat:
-        path: /usr/local/bin/k3s
-      register: k3s_stat
+    - name: Inspect installed K3s version
+      command: k3s --version
+      register: installed_k3s
+      changed_when: false
+      failed_when: false
 
-    - name: Install K3s single-node cluster
-      shell: >
-        curl -sfL https://get.k3s.io |
-        INSTALL_K3S_VERSION={{ k3s_version }}
-        INSTALL_K3S_EXEC="server --write-kubeconfig-mode=644"
-        sh -
-      when: not k3s_stat.stat.exists
+    - name: Install or upgrade the pinned K3s single-node cluster with Traefik
+      shell: |
+        set -o pipefail
+        curl -sfL https://get.k3s.io | \
+          INSTALL_K3S_VERSION={{ k3s_version }} \
+          INSTALL_K3S_EXEC="server --kubelet-arg=fail-swap-on=false" \
+          sh -
+      args:
+        executable: /bin/bash
+      when: installed_k3s.rc != 0 or k3s_version not in installed_k3s.stdout
+
+    - name: Protect the root K3s kubeconfig
+      file:
+        path: /etc/rancher/k3s/k3s.yaml
+        owner: root
+        group: root
+        mode: '0600'
 
     - name: Wait for K3s to be ready
       wait_for:
@@ -125,7 +146,7 @@
         state: directory
         owner: ubuntu
         group: ubuntu
-        mode: '0755'
+        mode: '0700'
 
     - name: Copy K3s kubeconfig for ubuntu user
       copy:
@@ -146,7 +167,10 @@
     - name: Verify K3s is running
       command: kubectl get nodes
       become_user: ubuntu
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
       register: k3s_nodes
+      until: k3s_nodes.rc == 0
       retries: 5
       delay: 10
 
@@ -173,5 +197,5 @@
           ✓ K3s: {{ k3s_version }} running
           ✓ kubectl: Configured for ubuntu user
           ═══════════════════════════════════════════════════════
-          Next: Deploy K8s manifests with kubectl apply -f k8s/
+          Next: Apply k8s/namespace-config.yml, create runtime Secrets, then run kubectl apply --validate=false -k k8s/
           ═══════════════════════════════════════════════════════

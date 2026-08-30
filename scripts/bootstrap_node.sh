@@ -1,13 +1,21 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-echo "=== 1. Setting up 2GB Swap ==="
+echo "=== 1. Setting up 2GB swap for K3s operational headroom ==="
 if [ ! -f /swapfile ]; then
   fallocate -l 2G /swapfile
   chmod 600 /swapfile
   mkswap /swapfile
+fi
+if ! swapon --show=NAME --noheadings | grep -qx '/swapfile'; then
   swapon /swapfile
+fi
+if ! grep -q '^/swapfile[[:space:]]' /etc/fstab; then
   echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
+if [[ ! -f /sys/fs/cgroup/memory.swap.max ]]; then
+  echo "cgroup v2 memory/swap accounting is required" >&2
+  exit 1
 fi
 free -h
 
@@ -26,11 +34,16 @@ systemctl enable docker && systemctl start docker
 docker --version
 
 echo "=== 3. Installing K3s Kubernetes ==="
-curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.30.2+k3s1 INSTALL_K3S_EXEC="server --write-kubeconfig-mode=644" sh -
-mkdir -p /home/ubuntu/.kube
-cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
-chown -R ubuntu:ubuntu /home/ubuntu/.kube
-echo "export KUBECONFIG=/home/ubuntu/.kube/config" >> /home/ubuntu/.bashrc
+curl -sfL https://get.k3s.io | \
+  INSTALL_K3S_VERSION=v1.36.2+k3s1 \
+  INSTALL_K3S_EXEC="server --kubelet-arg=fail-swap-on=false" \
+  sh -
+chmod 600 /etc/rancher/k3s/k3s.yaml
+install -d -m 0700 -o ubuntu -g ubuntu /home/ubuntu/.kube
+install -m 0600 -o ubuntu -g ubuntu /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
+if ! grep -q '^export KUBECONFIG=/home/ubuntu/.kube/config$' /home/ubuntu/.bashrc; then
+  echo "export KUBECONFIG=/home/ubuntu/.kube/config" >> /home/ubuntu/.bashrc
+fi
 
 echo "=== 4. Verifying K3s ==="
 sleep 5

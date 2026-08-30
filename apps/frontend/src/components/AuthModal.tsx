@@ -10,7 +10,7 @@ interface Props {
 
 export default function AuthModal({ onSuccess, onClose }: Props) {
   const [username, setUsername] = useState('RamanRed');
-  const [role, setRole] = useState<'SRE_LEAD' | 'DEVOPS_ENGINEER' | 'EVALUATOR'>('SRE_LEAD');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,8 +23,8 @@ export default function AuthModal({ onSuccess, onClose }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const profile = await authApi.login(username, role);
-      localStorage.setItem('sre_user', JSON.stringify(profile));
+      const profile = await authApi.login(username, password);
+      sessionStorage.setItem('sre_user', JSON.stringify(profile));
       onSuccess(profile);
     } catch (err: unknown) {
       const e = err as Error;
@@ -100,35 +100,28 @@ export default function AuthModal({ onSuccess, onClose }: Props) {
 
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 6 }}>
-              Access Role
+              Platform Access Password
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-              {[
-                { id: 'SRE_LEAD', label: 'SRE Lead' },
-                { id: 'DEVOPS_ENGINEER', label: 'DevOps' },
-                { id: 'EVALUATOR', label: 'Evaluator' },
-              ].map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setRole(r.id as any)}
-                  style={{
-                    padding: '8px 4px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                    cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
-                    background: role === r.id ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.04)',
-                    color: role === r.id ? '#818cf8' : 'var(--color-text-muted)',
-                    border: role === r.id ? '1px solid #6366f1' : '1px solid var(--color-border)',
-                  }}
-                >
-                  {r.label}
-                </button>
-              ))}
+            <div style={{ position: 'relative' }}>
+              <Lock size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--color-text-muted)' }} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                placeholder="Required when secure mode is enabled"
+                style={{
+                  width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10,
+                  background: '#090d16', border: '1px solid var(--color-border)',
+                  color: '#fff', fontSize: 14, outline: 'none',
+                }}
+              />
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
             <Lock size={13} />
-            <span>Secured via JWT SRE Session Bearer Token</span>
+            <span>Role is assigned by the server; the session token expires automatically.</span>
           </div>
 
           <button

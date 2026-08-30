@@ -1,14 +1,9 @@
-# Maven
-**/target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-buildNumber.properties
-.mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
+# Go
+**/bin/
+*.test
+*.out
+coverage/
+coverage-*.txt
 
 # Node
 **/node_modules/
@@ -40,9 +35,19 @@ terraform.rc
 
 # Environment variables & secrets
 .env
-.env.local
+.env.*
+!.env.example
+.npmrc
+.netrc
+.git-credentials
+.aws/
+.docker/
+.kube/
 *.pem
 *.key
 *.tfvars
 *.tfvars.json
 *kubeconfig*
+.deploy-secrets.*/
+.deploy-manifests.*/
+.docker-auth.*/
